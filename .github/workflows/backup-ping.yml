@@ -1,0 +1,31 @@
+name: Backup Cron & Sleep Prevention
+
+on:
+  schedule:
+    # Run every 10 minutes (or as close to it as GitHub Actions schedules allow)
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Enable manual execution from GitHub UI
+
+jobs:
+  ping:
+    name: Backend Wake & Process Webhooks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Heartbeat to Render Backend
+        run: |
+          echo "Sending health ping..."
+          curl -s -f "${{ secrets.BACKEND_URL }}/health" || echo "Backend might be asleep or restarting."
+
+      - name: Trigger Webhook Events Processing
+        run: |
+          echo "Triggering webhook event queue processing..."
+          curl -s -f -X POST \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.BACKEND_URL }}/jobs/process-webhook-events" || echo "Processing failed or timed out."
+
+      - name: Trigger Metrics Summary Rebuild
+        run: |
+          echo "Rebuilding hourly/daily metrics caches..."
+          curl -s -f -X POST \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.BACKEND_URL }}/jobs/rebuild-summary" || echo "Summary rebuild failed."
