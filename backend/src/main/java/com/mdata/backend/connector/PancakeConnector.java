@@ -194,13 +194,18 @@ public class PancakeConnector implements PlatformConnector {
             order.setStatus(status);
             order.setNormalizedStatus(MetricsService.normalizeOrderStatus("pancake", status));
             
-            BigDecimal total = BigDecimal.ZERO;
-            if (node.has("total_price")) total = new BigDecimal(node.get("total_price").asText());
-            else if (node.has("total_amount")) total = new BigDecimal(node.get("total_amount").asText());
-            else if (node.has("money_to_collect")) total = new BigDecimal(node.get("money_to_collect").asText());
+            BigDecimal gross = BigDecimal.ZERO;
+            if (node.has("total_price") && !node.get("total_price").isNull()) gross = new BigDecimal(node.get("total_price").asText());
+            else if (node.has("total_amount") && !node.get("total_amount").isNull()) gross = new BigDecimal(node.get("total_amount").asText());
+            else if (node.has("money_to_collect") && !node.get("money_to_collect").isNull()) gross = new BigDecimal(node.get("money_to_collect").asText());
+
+            BigDecimal net = BigDecimal.ZERO;
+            if (node.has("money_to_collect") && !node.get("money_to_collect").isNull()) net = new BigDecimal(node.get("money_to_collect").asText());
+            else if (node.has("total_price") && !node.get("total_price").isNull()) net = new BigDecimal(node.get("total_price").asText());
+            else if (node.has("total_amount") && !node.get("total_amount").isNull()) net = new BigDecimal(node.get("total_amount").asText());
                               
-            order.setGrossRevenue(total);
-            order.setNetRevenue(total);
+            order.setGrossRevenue(gross);
+            order.setNetRevenue(net);
             order.setCurrency("VND");
             order.setRawData(node.toString());
 
