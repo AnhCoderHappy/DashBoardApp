@@ -171,7 +171,7 @@ public class MetricsService {
 
         for (AdInsightsHourly ad : adInsights) {
             Instant hour = ad.getHour().truncatedTo(ChronoUnit.HOURS);
-            String shopId = "unknown"; // Ads are currently not tied to a connectionId in the entity
+            String shopId = ad.getShopId() != null ? ad.getShopId() : "unknown";
             String key = ad.getPlatform() + "_" + shopId + "_" + hour.toString();
 
             HourlyMetrics metric = aggMap.computeIfAbsent(key, k -> {
@@ -247,7 +247,7 @@ public class MetricsService {
 
         for (AdInsightsHourly ad : adInsights) {
             LocalDate localDate = ad.getHour().atZone(VN_ZONE).toLocalDate();
-            String shopId = "unknown";
+            String shopId = ad.getShopId() != null ? ad.getShopId() : "unknown";
             String key = ad.getPlatform() + "_" + shopId + "_" + localDate.toString();
 
             DailyMetrics metric = aggMap.computeIfAbsent(key, k -> {
@@ -322,7 +322,7 @@ public class MetricsService {
 
         for (AdInsightsHourly ad : adInsights) {
             LocalDate localDate = ad.getHour().atZone(VN_ZONE).toLocalDate();
-            String shopId = "unknown";
+            String shopId = ad.getShopId() != null ? ad.getShopId() : "unknown";
             String key = ad.getPlatform() + "_" + shopId + "_" + localDate.toString();
 
             DailyMetrics metric = aggMap.computeIfAbsent(key, k -> {
@@ -397,7 +397,7 @@ public class MetricsService {
 
         for (AdInsightsHourly ad : adInsights) {
             Instant hour = ad.getHour().truncatedTo(ChronoUnit.HOURS);
-            String shopId = "unknown";
+            String shopId = ad.getShopId() != null ? ad.getShopId() : "unknown";
             String key = ad.getPlatform() + "_" + shopId + "_" + hour.toString();
 
             HourlyMetrics metric = aggMap.computeIfAbsent(key, k -> {
