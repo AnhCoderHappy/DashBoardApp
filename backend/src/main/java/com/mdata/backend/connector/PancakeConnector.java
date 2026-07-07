@@ -406,8 +406,8 @@ public class PancakeConnector implements PlatformConnector {
             // Save aggregated campaigns
             for (CampaignAggregation agg : campaignMap.values()) {
                 try {
-                    boolean hasExistingRecords = adInsightsHourlyRepository.existsByPlatformAndAdAccountIdAndCampaignId(
-                            "facebook-ads", agg.adAccountId, agg.campaignId);
+                    boolean hasExistingRecords = adInsightsHourlyRepository.existsByPlatformAndShopIdAndAdAccountIdAndCampaignId(
+                            "facebook-ads", shopId, agg.adAccountId, agg.campaignId);
 
                     Instant hour;
                     if (!hasExistingRecords) {
@@ -416,11 +416,12 @@ public class PancakeConnector implements PlatformConnector {
                         hour = Instant.now().truncatedTo(ChronoUnit.HOURS);
                     }
 
-                    var existingOpt = adInsightsHourlyRepository.findByPlatformAndAdAccountIdAndCampaignIdAndHour(
-                            "facebook-ads", agg.adAccountId, agg.campaignId, hour);
+                    var existingOpt = adInsightsHourlyRepository.findByPlatformAndShopIdAndAdAccountIdAndCampaignIdAndHour(
+                            "facebook-ads", shopId, agg.adAccountId, agg.campaignId, hour);
 
                     com.mdata.backend.entity.AdInsightsHourly insight = existingOpt.orElseGet(com.mdata.backend.entity.AdInsightsHourly::new);
                     insight.setPlatform("facebook-ads");
+                    insight.setShopId(shopId);
                     insight.setAdAccountId(agg.adAccountId);
                     insight.setCampaignId(agg.campaignId);
                     insight.setCampaignName(agg.campaignName);
@@ -449,16 +450,16 @@ public class PancakeConnector implements PlatformConnector {
                         insight.setCtr(ctr);
                     } else {
                         // Query sums before the current hour
-                        BigDecimal sumSpend = adInsightsHourlyRepository.sumSpendBeforeHour("facebook-ads", agg.adAccountId, agg.campaignId, hour);
+                        BigDecimal sumSpend = adInsightsHourlyRepository.sumSpendBeforeHour("facebook-ads", shopId, agg.adAccountId, agg.campaignId, hour);
                         if (sumSpend == null) sumSpend = BigDecimal.ZERO;
 
-                        Long sumImpressions = adInsightsHourlyRepository.sumImpressionsBeforeHour("facebook-ads", agg.adAccountId, agg.campaignId, hour);
+                        Long sumImpressions = adInsightsHourlyRepository.sumImpressionsBeforeHour("facebook-ads", shopId, agg.adAccountId, agg.campaignId, hour);
                         if (sumImpressions == null) sumImpressions = 0L;
 
-                        Long sumClicks = adInsightsHourlyRepository.sumClicksBeforeHour("facebook-ads", agg.adAccountId, agg.campaignId, hour);
+                        Long sumClicks = adInsightsHourlyRepository.sumClicksBeforeHour("facebook-ads", shopId, agg.adAccountId, agg.campaignId, hour);
                         if (sumClicks == null) sumClicks = 0L;
 
-                        Long sumReach = adInsightsHourlyRepository.sumReachBeforeHour("facebook-ads", agg.adAccountId, agg.campaignId, hour);
+                        Long sumReach = adInsightsHourlyRepository.sumReachBeforeHour("facebook-ads", shopId, agg.adAccountId, agg.campaignId, hour);
                         if (sumReach == null) sumReach = 0L;
 
                         // Calculate incremental values

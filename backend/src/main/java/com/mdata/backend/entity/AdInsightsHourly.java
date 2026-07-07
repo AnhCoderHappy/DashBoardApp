@@ -11,12 +11,15 @@ import java.util.UUID;
 @Data
 @Entity
 @Table(name = "ad_insights_hourly", uniqueConstraints = {
-    @UniqueConstraint(columnNames = {"platform", "ad_account_id", "campaign_id", "hour"})
+    @UniqueConstraint(columnNames = {"platform", "shop_id", "ad_account_id", "campaign_id", "hour"})
 })
 public class AdInsightsHourly {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
+
+    @Column(name = "shop_id")
+    private String shopId;
 
     @Column(nullable = false)
     private String platform;

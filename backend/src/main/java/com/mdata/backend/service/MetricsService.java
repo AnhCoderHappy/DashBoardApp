@@ -617,7 +617,12 @@ public class MetricsService {
         CompletableFuture<List<AdInsightsHourly>> insightsFuture = CompletableFuture.supplyAsync(
             () -> {
                 long s = System.currentTimeMillis();
-                List<AdInsightsHourly> res = adInsightsHourlyRepository.findByHourBetween(fLocalMidnightUTC, fEndOfDayUTC);
+                List<AdInsightsHourly> res;
+                if (fHasShopFilter && fFilterShopId != null && !fFilterShopId.isEmpty()) {
+                    res = adInsightsHourlyRepository.findByShopIdAndHourBetween(fFilterShopId, fLocalMidnightUTC, fEndOfDayUTC);
+                } else {
+                    res = adInsightsHourlyRepository.findByHourBetween(fLocalMidnightUTC, fEndOfDayUTC);
+                }
                 System.out.println("[PERF-TELEMETRY] Query insights took: " + (System.currentTimeMillis() - s) + " ms");
                 return res;
             }, dashboardExecutor
