@@ -5,12 +5,14 @@ import autoprefixer from 'autoprefixer'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
+import { cloudflare } from "@cloudflare/vite-plugin";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), cloudflare()],
   css: {
     postcss: {
       plugins: [
