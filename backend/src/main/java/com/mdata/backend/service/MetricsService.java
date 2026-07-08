@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -59,6 +60,66 @@ public class MetricsService {
             return getPancakeSourcePlatform(order.getRawData());
         }
         return order.getPlatform();
+    }
+
+    private Instant resolveBusinessTime(Order order) {
+        if (order.getBusinessTime() != null) {
+            return order.getBusinessTime();
+        }
+        if (order.getRawData() != null && !order.getRawData().isBlank()) {
+            try {
+                JsonNode node = objectMapper.readTree(order.getRawData());
+                String value = null;
+                for (String field : List.of("inserted_at", "created_at", "updated_at")) {
+                    JsonNode fieldValue = node.path(field);
+                    if (!fieldValue.isMissingNode() && !fieldValue.isNull() && !fieldValue.asText().isBlank()) {
+                        value = fieldValue.asText();
+                        break;
+                    }
+                }
+                if (value != null) {
+                    if (value.matches("\\d+")) {
+                        long epoch = Long.parseLong(value);
+                        return epoch > 9_999_999_999L ? Instant.ofEpochMilli(epoch) : Instant.ofEpochSecond(epoch);
+                    }
+                    String clean = value.contains(".") && !value.endsWith("Z") ? value.substring(0, value.indexOf(".")) : value;
+                    if (clean.endsWith("Z") || clean.contains("+")) {
+                        return Instant.parse(clean);
+                    }
+                    return LocalDateTime.parse(clean).atZone(VN_ZONE).toInstant();
+                }
+            } catch (Exception ignored) {
+                // ponytail: old raw Pancake variants fall back to stored platform time; add patterns when sample proves them.
+            }
+        }
+        return order.getCreatedAtPlatform() != null ? order.getCreatedAtPlatform() : Instant.now();
+    }
+
+    private LocalDate resolveBusinessDate(Order order) {
+        if (order.getBusinessDate() != null) {
+            return order.getBusinessDate();
+        }
+        return resolveBusinessTime(order).atZone(VN_ZONE).toLocalDate();
+    }
+
+    private Instant businessHourBucket(Order order) {
+        return resolveBusinessTime(order).atZone(VN_ZONE).truncatedTo(ChronoUnit.HOURS).toInstant();
+    }
+
+    private List<Order> findOrdersForBusinessDate(LocalDate targetDate, List<UUID> connectionIds, boolean hasShopFilter) {
+        Instant start = targetDate.minusDays(1).atStartOfDay(VN_ZONE).toInstant();
+        Instant end = targetDate.plusDays(2).atStartOfDay(VN_ZONE).toInstant();
+        List<Order> orders;
+        if (hasShopFilter && connectionIds != null && !connectionIds.isEmpty()) {
+            orders = orderRepository.findByCreatedAtPlatformBetweenAndConnectionIdIn(start, end, connectionIds);
+        } else if (hasShopFilter) {
+            return List.of();
+        } else {
+            orders = orderRepository.findByCreatedAtPlatformBetween(start, end);
+        }
+        return orders.stream()
+                .filter(order -> targetDate.equals(resolveBusinessDate(order)))
+                .collect(Collectors.toList());
     }
 
     private final OrderRepository orderRepository;
@@ -286,7 +347,7 @@ public class MetricsService {
         Instant startUTC = targetDate.atStartOfDay(VN_ZONE).toInstant();
         Instant endUTC = targetDate.plusDays(1).atStartOfDay(VN_ZONE).toInstant();
 
-        List<Order> orders = orderRepository.findByCreatedAtPlatformBetween(startUTC, endUTC);
+        List<Order> orders = findOrdersForBusinessDate(targetDate, null, false);
         List<AdInsightsHourly> adInsights = adInsightsHourlyRepository.findByHourBetween(startUTC, endUTC);
 
         Map<UUID, String> connectionToShopId = connectionRepository.findAll().stream()
@@ -295,7 +356,7 @@ public class MetricsService {
         Map<String, DailyMetrics> aggMap = new HashMap<>();
 
         for (Order order : orders) {
-            LocalDate localDate = order.getCreatedAtPlatform().atZone(VN_ZONE).toLocalDate();
+            LocalDate localDate = resolveBusinessDate(order);
             String shopId = order.getConnectionId() != null ? connectionToShopId.getOrDefault(order.getConnectionId(), "unknown") : "unknown";
             String platform = orderSourceChannel(order);
             String key = platform + "_" + shopId + "_" + localDate.toString();
@@ -359,7 +420,7 @@ public class MetricsService {
         hourlyMetricsRepository.deleteByHourBetween(start, end);
         hourlyMetricsRepository.flush();
 
-        List<Order> orders = orderRepository.findByCreatedAtPlatformBetween(start, end);
+        List<Order> orders = findOrdersForBusinessDate(targetDate, null, false);
         List<AdInsightsHourly> adInsights = adInsightsHourlyRepository.findByHourBetween(start, end);
 
         Map<UUID, String> connectionToShopId = connectionRepository.findAll().stream()
@@ -368,7 +429,7 @@ public class MetricsService {
         Map<String, HourlyMetrics> aggMap = new HashMap<>();
 
         for (Order order : orders) {
-            Instant hour = order.getCreatedAtPlatform().truncatedTo(ChronoUnit.HOURS);
+            Instant hour = businessHourBucket(order);
             String shopId = order.getConnectionId() != null ? connectionToShopId.getOrDefault(order.getConnectionId(), "unknown") : "unknown";
             String platform = orderSourceChannel(order);
             String key = platform + "_" + shopId + "_" + hour.toString();
@@ -513,14 +574,7 @@ public class MetricsService {
         CompletableFuture<List<Order>> dateOrdersFuture = CompletableFuture.supplyAsync(
             () -> {
                 long s = System.currentTimeMillis();
-                List<Order> res;
-                if (fHasShopFilter && fConnectionIds != null && !fConnectionIds.isEmpty()) {
-                    res = orderRepository.findByCreatedAtPlatformBetweenAndConnectionIdIn(fLocalMidnightUTC, fEndOfDayUTC, fConnectionIds);
-                } else if (fHasShopFilter) {
-                    res = List.of();
-                } else {
-                    res = orderRepository.findByCreatedAtPlatformBetween(fLocalMidnightUTC, fEndOfDayUTC);
-                }
+                List<Order> res = findOrdersForBusinessDate(fTargetDate, fConnectionIds, fHasShopFilter);
                 System.out.println("[PERF-TELEMETRY] Query dateOrders took: " + (System.currentTimeMillis() - s) + " ms");
                 return res;
             }, dashboardExecutor
@@ -561,24 +615,7 @@ public class MetricsService {
         CompletableFuture<List<Order>> latestOrdersFuture = CompletableFuture.supplyAsync(
             () -> {
                 long s = System.currentTimeMillis();
-                List<Order> res;
-                if (fTargetDate.equals(LocalDate.now(VN_ZONE))) {
-                    if (fHasShopFilter && fConnectionIds != null && !fConnectionIds.isEmpty()) {
-                        res = orderRepository.findByCreatedAtPlatformGreaterThanEqualAndConnectionIdIn(Instant.now().minus(24, ChronoUnit.HOURS), fConnectionIds);
-                    } else if (fHasShopFilter) {
-                        res = List.of();
-                    } else {
-                        res = orderRepository.findByCreatedAtPlatformGreaterThanEqual(Instant.now().minus(24, ChronoUnit.HOURS));
-                    }
-                } else {
-                    if (fHasShopFilter && fConnectionIds != null && !fConnectionIds.isEmpty()) {
-                        res = orderRepository.findByCreatedAtPlatformBetweenAndConnectionIdIn(fLocalMidnightUTC, fEndOfDayUTC, fConnectionIds);
-                    } else if (fHasShopFilter) {
-                        res = List.of();
-                    } else {
-                        res = orderRepository.findByCreatedAtPlatformBetween(fLocalMidnightUTC, fEndOfDayUTC);
-                    }
-                }
+                List<Order> res = findOrdersForBusinessDate(fTargetDate, fConnectionIds, fHasShopFilter);
                 System.out.println("[PERF-TELEMETRY] Query latestOrders took: " + (System.currentTimeMillis() - s) + " ms");
                 return res;
             }, dashboardExecutor
@@ -918,12 +955,12 @@ public class MetricsService {
         List<Order> latestOrders = latestOrdersFuture.join();
         
         List<DashboardDataDto.RealtimeOrderDto> realtimeOrders = latestOrders.stream()
-                .sorted(Comparator.comparing(Order::getCreatedAtPlatform).reversed())
+                .sorted(Comparator.comparing(this::resolveBusinessTime).reversed())
                 .limit(10)
                 .map(o -> {
                     DashboardDataDto.RealtimeOrderDto r = new DashboardDataDto.RealtimeOrderDto();
                     r.setId(o.getId().toString());
-                    r.setCreatedAt(o.getCreatedAtPlatform().atZone(VN_ZONE).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
+                    r.setCreatedAt(resolveBusinessTime(o).atZone(VN_ZONE).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
                     r.setOrderCode(o.getPlatformOrderId());
                     r.setCustomerDisplayName(o.getCustomerName() != null ? o.getCustomerName() : "Khách Hàng");
                     String platform = orderSourceChannel(o);

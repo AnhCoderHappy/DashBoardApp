@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -18,6 +19,7 @@ import java.util.UUID;
 @Service
 public class DashboardSnapshotService {
     public static final String BOOTSTRAP = "BOOTSTRAP";
+    private static final ZoneId VN_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final DashboardSnapshotRepository snapshotRepository;
@@ -80,6 +82,9 @@ public class DashboardSnapshotService {
     private DashboardSnapshotResponse loadOrRebuild(UUID connectionId, LocalDate date) {
         return snapshotRepository.findByConnectionIdAndSnapshotDateAndSnapshotType(connectionId, date, BOOTSTRAP)
                 .map(snapshot -> {
+                    if (shouldRebuild(snapshot, date)) {
+                        return rebuildBootstrapSnapshot(connectionId, date);
+                    }
                     DashboardSnapshotResponse response = response(
                             connectionId,
                             date,
@@ -93,6 +98,13 @@ public class DashboardSnapshotService {
                     return response;
                 })
                 .orElseGet(() -> rebuildBootstrapSnapshot(connectionId, date));
+    }
+
+    private boolean shouldRebuild(DashboardSnapshot snapshot, LocalDate date) {
+        LocalDate today = LocalDate.now(VN_ZONE);
+        return date.equals(today)
+                && snapshot.getGeneratedAt() != null
+                && snapshot.getGeneratedAt().isBefore(Instant.now().minusSeconds(30));
     }
 
     private String write(DashboardDataDto payload) {
