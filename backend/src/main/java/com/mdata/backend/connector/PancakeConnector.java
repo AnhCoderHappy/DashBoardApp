@@ -428,8 +428,7 @@ public class PancakeConnector implements PlatformConnector {
                         hour = Instant.now().truncatedTo(ChronoUnit.HOURS);
                     }
 
-                    var existingOpt = adInsightsHourlyRepository.findByPlatformAndShopIdAndAdAccountIdAndCampaignIdAndHour(
-                            "facebook-ads", shopId, agg.adAccountId, agg.campaignId, hour);
+                    var existingOpt = adInsightsHourlyRepository.findByPlatformAndShopIdAndHour("facebook-ads", shopId, hour);
 
                     com.mdata.backend.entity.AdInsightsHourly insight = existingOpt.orElseGet(com.mdata.backend.entity.AdInsightsHourly::new);
                     insight.setPlatform("facebook-ads");

@@ -43,7 +43,7 @@ public class SyncScheduler {
                         connectionRepository.save(conn);
                     } catch (Exception e) {
                         conn.setLastErrorAt(java.time.Instant.now());
-                        conn.setLastErrorMessage(e.getMessage());
+                        conn.setLastErrorMessage(truncate(e.getMessage(), 250));
                         conn.setUpdatedAt(java.time.Instant.now());
                         connectionRepository.save(conn);
                         System.err.println("[Scheduler] Error syncing for connection " + conn.getId() + ": " + e.getMessage());
@@ -61,5 +61,12 @@ public class SyncScheduler {
     public void onStartup() {
         System.out.println("[Scheduler] Running initial sync on application startup...");
         autoSync();
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 }

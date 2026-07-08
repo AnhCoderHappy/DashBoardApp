@@ -17,6 +17,8 @@ public interface AdInsightsHourlyRepository extends JpaRepository<AdInsightsHour
             String platform, String shopId, String adAccountId, String campaignId, Instant hour
     );
 
+    Optional<AdInsightsHourly> findByPlatformAndShopIdAndHour(String platform, String shopId, Instant hour);
+
     List<AdInsightsHourly> findByHourGreaterThanEqual(Instant since);
 
     List<AdInsightsHourly> findByHourBetween(Instant start, Instant end);
