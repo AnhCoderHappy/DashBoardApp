@@ -2,35 +2,34 @@ package com.mdata.backend.controller;
 
 import com.mdata.backend.dto.DashboardDataDto;
 import com.mdata.backend.repository.PlatformConnectionRepository;
-import com.mdata.backend.service.MetricsService;
+import com.mdata.backend.service.DashboardSnapshotService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping
 public class DashboardController {
 
-    private final MetricsService metricsService;
     private final PlatformConnectionRepository connectionRepository;
-    private final com.mdata.backend.connector.PancakeConnector pancakeConnector;
+    private final DashboardSnapshotService dashboardSnapshotService;
     private final com.mdata.backend.service.SseService sseService;
     private final long startTime = System.currentTimeMillis();
 
     public DashboardController(
-            MetricsService metricsService, 
             PlatformConnectionRepository connectionRepository,
-            com.mdata.backend.connector.PancakeConnector pancakeConnector,
+            DashboardSnapshotService dashboardSnapshotService,
             com.mdata.backend.service.SseService sseService
     ) {
-        this.metricsService = metricsService;
         this.connectionRepository = connectionRepository;
-        this.pancakeConnector = pancakeConnector;
+        this.dashboardSnapshotService = dashboardSnapshotService;
         this.sseService = sseService;
     }
 
@@ -60,42 +59,29 @@ public class DashboardController {
         return ResponseEntity.status(dbOk ? 200 : 500).body(report);
     }
 
+    @GetMapping("/api/dashboard/bootstrap")
+    public ResponseEntity<DashboardSnapshotService.DashboardSnapshotResponse> getBootstrapDashboard(
+            @org.springframework.web.bind.annotation.RequestParam UUID connectionId,
+            @org.springframework.web.bind.annotation.RequestParam String date) {
+        LocalDate targetDate = LocalDate.parse(date);
+        return ResponseEntity.ok(dashboardSnapshotService.getBootstrapSnapshot(connectionId, targetDate));
+    }
+
     @GetMapping("/api/dashboard/live")
-    public ResponseEntity<DashboardDataDto> getLiveDashboard(
+    public ResponseEntity<?> getLiveDashboard(
             @org.springframework.web.bind.annotation.RequestParam(required = false, defaultValue = "all") String shopId,
             @org.springframework.web.bind.annotation.RequestParam(required = false) String date,
             @org.springframework.web.bind.annotation.RequestParam(required = false, defaultValue = "false") boolean refresh) {
         long start = System.currentTimeMillis();
         System.out.println("[PERF-MEASURE] GET /api/dashboard/live request received for shopId: " + shopId + ", date: " + date + " at: " + start + " ms");
-        
-        if (refresh) {
-            System.out.println("[Dashboard API] Force refresh requested. Running real-time sync before returning data...");
-            try {
-                var connections = connectionRepository.findByPlatform("pancake");
-                for (var conn : connections) {
-                    if ("active".equals(conn.getStatus())) {
-                        try {
-                            pancakeConnector.syncOrders(conn.getId(), null);
-                            pancakeConnector.syncAdsInsights(conn.getId(), null);
-                        } catch (Exception connEx) {
-                            System.err.println("[Dashboard API] Error syncing for connection " + conn.getId() + ": " + connEx.getMessage());
-                        }
-                    }
-                }
-                try {
-                    metricsService.rebuildHourlyMetrics(168);
-                    metricsService.rebuildDailyMetrics(7);
-                    metricsService.clearDashboardCache();
-                    System.out.println("[Dashboard API] Real-time sync completed.");
-                } catch (Exception rebuildEx) {
-                    System.err.println("[Dashboard API] Error rebuilding metrics: " + rebuildEx.getMessage());
-                }
-            } catch (Exception e) {
-                System.err.println("[Dashboard API] Real-time sync failed: " + e.getMessage());
-            }
-        }
 
-        DashboardDataDto data = metricsService.getLiveDashboardData(shopId, date, refresh);
+        LocalDate targetDate = date != null && !date.isBlank()
+                ? LocalDate.parse(date)
+                : LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
+        var data = dashboardSnapshotService.currentForShop(shopId, targetDate);
+        if (refresh) {
+            data = data.withRefreshQueued(true);
+        }
         long duration = System.currentTimeMillis() - start;
         System.out.println("[PERF-MEASURE] GET /api/dashboard/live response sent in " + duration + " ms. End time: " + System.currentTimeMillis() + " ms");
         return ResponseEntity.ok(data);

@@ -35,12 +35,12 @@ public interface OrderItemRepository extends JpaRepository<OrderItem, UUID> {
            "ORDER BY SUM(oi.totalPrice) DESC")
     List<Object[]> findTopProductsBetweenAndConnectionIdIn(@Param("start") Instant start, @Param("end") Instant end, @Param("connectionIds") List<UUID> connectionIds);
 
-    @Query("SELECT oi.productName, o.platform, o.rawData, oi.quantity, oi.totalPrice " +
+    @Query("SELECT oi.productName, COALESCE(o.sourceChannel, o.platform), o.rawData, oi.quantity, oi.totalPrice " +
            "FROM OrderItem oi JOIN Order o ON oi.orderId = o.id " +
            "WHERE o.createdAtPlatform >= :start AND o.createdAtPlatform < :end")
     List<Object[]> findItemsWithPlatformBetween(@Param("start") Instant start, @Param("end") Instant end);
 
-    @Query("SELECT oi.productName, o.platform, o.rawData, oi.quantity, oi.totalPrice " +
+    @Query("SELECT oi.productName, COALESCE(o.sourceChannel, o.platform), o.rawData, oi.quantity, oi.totalPrice " +
            "FROM OrderItem oi JOIN Order o ON oi.orderId = o.id " +
            "WHERE o.createdAtPlatform >= :start AND o.createdAtPlatform < :end " +
            "AND o.connectionId IN :connectionIds")

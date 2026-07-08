@@ -15,16 +15,13 @@ public class SyncScheduler {
 
     private final PlatformConnectionRepository connectionRepository;
     private final PancakeConnector pancakeConnector;
-    private final MetricsService metricsService;
 
     public SyncScheduler(
             PlatformConnectionRepository connectionRepository,
-            PancakeConnector pancakeConnector,
-            MetricsService metricsService
+            PancakeConnector pancakeConnector
     ) {
         this.connectionRepository = connectionRepository;
         this.pancakeConnector = pancakeConnector;
-        this.metricsService = metricsService;
     }
 
     // Run automatically every 10 minutes to sync Pancake POS orders and ads
@@ -36,16 +33,23 @@ public class SyncScheduler {
             for (PlatformConnection conn : connections) {
                 if ("active".equals(conn.getStatus())) {
                     try {
-                        pancakeConnector.syncOrders(conn.getId(), null);
-                        pancakeConnector.syncAdsInsights(conn.getId(), null);
+                        java.time.Instant since = conn.getLastSuccessfulSyncAt();
+                        pancakeConnector.syncOrders(conn.getId(), since);
+                        pancakeConnector.syncAdsInsights(conn.getId(), since);
+                        conn.setLastSuccessfulSyncAt(java.time.Instant.now());
+                        conn.setLastErrorAt(null);
+                        conn.setLastErrorMessage(null);
+                        conn.setUpdatedAt(java.time.Instant.now());
+                        connectionRepository.save(conn);
                     } catch (Exception e) {
+                        conn.setLastErrorAt(java.time.Instant.now());
+                        conn.setLastErrorMessage(e.getMessage());
+                        conn.setUpdatedAt(java.time.Instant.now());
+                        connectionRepository.save(conn);
                         System.err.println("[Scheduler] Error syncing for connection " + conn.getId() + ": " + e.getMessage());
                     }
                 }
             }
-            metricsService.rebuildHourlyMetrics(168);
-            metricsService.rebuildDailyMetrics(7);
-            metricsService.clearDashboardCache();
             System.out.println("[Scheduler] Automatic background sync completed successfully.");
         } catch (Exception e) {
             System.err.println("[Scheduler] Global error in background sync: " + e.getMessage());

@@ -1,14 +1,19 @@
 package com.mdata.backend.controller;
 
-import com.mdata.backend.connector.PancakeConnector;
 import com.mdata.backend.entity.PlatformConnection;
+import com.mdata.backend.entity.WebhookEvent;
 import com.mdata.backend.repository.PlatformConnectionRepository;
-import com.mdata.backend.service.MetricsService;
+import com.mdata.backend.repository.WebhookEventRepository;
+import com.mdata.backend.service.DashboardProjectionService;
+import com.mdata.backend.service.OrderIngestionService;
 import com.mdata.backend.service.SseService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDate;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Instant;
+import java.util.HexFormat;
 import java.util.Map;
 
 @RestController
@@ -16,19 +21,22 @@ import java.util.Map;
 public class WebhookController {
 
     private final PlatformConnectionRepository connectionRepository;
-    private final PancakeConnector pancakeConnector;
-    private final MetricsService metricsService;
+    private final WebhookEventRepository webhookEventRepository;
+    private final OrderIngestionService orderIngestionService;
+    private final DashboardProjectionService dashboardProjectionService;
     private final SseService sseService;
 
     public WebhookController(
             PlatformConnectionRepository connectionRepository,
-            PancakeConnector pancakeConnector,
-            MetricsService metricsService,
+            WebhookEventRepository webhookEventRepository,
+            OrderIngestionService orderIngestionService,
+            DashboardProjectionService dashboardProjectionService,
             SseService sseService
     ) {
         this.connectionRepository = connectionRepository;
-        this.pancakeConnector = pancakeConnector;
-        this.metricsService = metricsService;
+        this.webhookEventRepository = webhookEventRepository;
+        this.orderIngestionService = orderIngestionService;
+        this.dashboardProjectionService = dashboardProjectionService;
         this.sseService = sseService;
     }
 
@@ -45,58 +53,66 @@ public class WebhookController {
                     .findFirst()
                     .orElseThrow(() -> new IllegalArgumentException("Connection not found for shopId: " + shopId));
 
-            // Process order payload
-            pancakeConnector.processSingleOrderPayload(payloadBody, conn.getId());
+            WebhookEvent event = new WebhookEvent();
+            event.setPlatform("pancake");
+            event.setConnectionId(conn.getId());
+            event.setEventType("pancake_order");
+            event.setEventId(java.util.UUID.randomUUID().toString());
+            event.setPayloadHash(sha256(payloadBody));
+            event.setPayload(payloadBody);
+            event.setStatus("pending");
+            event.setReceivedAt(Instant.now());
+            WebhookEvent savedEvent = webhookEventRepository.save(event);
 
-            // Extract the date of the order from the payload to perform targeted rebuild
-            LocalDate targetDate = LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
-            try {
-                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                com.fasterxml.jackson.databind.JsonNode rootNode = mapper.readTree(payloadBody);
-                com.fasterxml.jackson.databind.JsonNode dataNode = rootNode.has("data") ? rootNode.get("data") : rootNode;
-                com.fasterxml.jackson.databind.JsonNode orderNode = dataNode.isArray() && dataNode.size() > 0 ? dataNode.get(0) : dataNode;
+            sseService.broadcast("ORDER_RECEIVED", Map.of(
+                    "connectionId", conn.getId(),
+                    "shopId", shopId,
+                    "eventId", savedEvent.getId(),
+                    "receivedAt", savedEvent.getReceivedAt().toString()
+            ));
 
-                if (orderNode.has("inserted_at") && !orderNode.get("inserted_at").isNull()) {
-                    String insertedAtStr = orderNode.get("inserted_at").asText();
-                    if (insertedAtStr.contains(".")) {
-                        insertedAtStr = insertedAtStr.substring(0, insertedAtStr.indexOf("."));
-                    }
-                    java.time.LocalDateTime ldt = java.time.LocalDateTime.parse(insertedAtStr);
-                    targetDate = ldt.atZone(java.time.ZoneId.of("UTC")).withZoneSameInstant(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).toLocalDate();
-                }
-            } catch (Exception ex) {
-                System.err.println("[Webhook] Error parsing order date from webhook payload, defaulting to today: " + ex.getMessage());
-            }
-
-            final LocalDate finalTargetDate = targetDate;
-            System.out.println("[Webhook] Targeted date identified: " + finalTargetDate);
-
-            // Rebuild hourly/daily metrics and clear cache (Asynchronously in background)
             java.util.concurrent.CompletableFuture.runAsync(() -> {
-                long asyncStart = System.currentTimeMillis();
-                System.out.println("[PERF-MEASURE] [Async] Background metrics rebuild started for date: " + finalTargetDate + " at: " + asyncStart + " ms");
+                WebhookEvent processingEvent = webhookEventRepository.findById(savedEvent.getId()).orElse(null);
+                if (processingEvent == null) return;
                 try {
-                    metricsService.rebuildHourlyMetricsForDate(finalTargetDate);
-                    metricsService.rebuildDailyMetricsForDate(finalTargetDate);
-                    metricsService.clearDashboardCache();
+                    processingEvent.setStatus("processing");
+                    processingEvent.setLockedAt(Instant.now());
+                    processingEvent.setLockedBy("webhook-async");
+                    webhookEventRepository.save(processingEvent);
 
-                    // Broadcast real-time order-update event to frontend
-                    sseService.broadcast("order-update", "new-order");
-                    long asyncDuration = System.currentTimeMillis() - asyncStart;
-                    System.out.println("[PERF-MEASURE] [Async] Background metrics rebuild & SSE broadcast completed in " + asyncDuration + " ms. End time: " + System.currentTimeMillis() + " ms");
-                } catch (Exception dbEx) {
-                    System.err.println("[Webhook] [Async] Fatal DB error during metrics rebuild: " + dbEx.getMessage());
-                    dbEx.printStackTrace();
+                    var result = orderIngestionService.processPancakePayload(conn.getId(), payloadBody, savedEvent.getId());
+                    dashboardProjectionService.updateProjection(result);
+
+                    processingEvent.setStatus("processed");
+                    processingEvent.setProcessedAt(Instant.now());
+                    processingEvent.setErrorMessage(null);
+                    webhookEventRepository.save(processingEvent);
+
+                    sseService.broadcast("ORDER_CONFIRMED", Map.of("connectionId", conn.getId(), "orders", result.getConfirmedOrderIds()));
+                    sseService.broadcast("DASHBOARD_DELTA", Map.of("connectionId", conn.getId(), "affectedDates", result.getAffectedDates()));
+                } catch (Exception ex) {
+                    processingEvent.setStatus("failed");
+                    processingEvent.setAttemptCount((processingEvent.getAttemptCount() == null ? 0 : processingEvent.getAttemptCount()) + 1);
+                    processingEvent.setNextRetryAt(Instant.now().plusSeconds(60));
+                    processingEvent.setErrorMessage(ex.getMessage());
+                    processingEvent.setProcessedAt(Instant.now());
+                    webhookEventRepository.save(processingEvent);
+                    sseService.broadcast("ORDER_PROCESS_FAILED", Map.of("connectionId", conn.getId(), "eventId", savedEvent.getId(), "error", ex.getMessage()));
                 }
             });
 
             long duration = System.currentTimeMillis() - start;
-            System.out.println("[PERF-MEASURE] Webhook processed (order saved, async metrics started) in " + duration + " ms. End time: " + System.currentTimeMillis() + " ms");
-            return ResponseEntity.ok(Map.of("success", true, "message", "Webhook processed and async metrics rebuild started."));
+            System.out.println("[PERF-MEASURE] Webhook accepted in " + duration + " ms. End time: " + System.currentTimeMillis() + " ms");
+            return ResponseEntity.ok(Map.of("success", true, "eventId", savedEvent.getId(), "status", "accepted"));
         } catch (Exception e) {
             System.err.println("[Webhook] Error processing Pancake webhook: " + e.getMessage());
             e.printStackTrace();
             return ResponseEntity.status(500).body(Map.of("success", false, "error", e.getMessage()));
         }
+    }
+
+    private String sha256(String payload) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        return HexFormat.of().formatHex(digest.digest(payload.getBytes(StandardCharsets.UTF_8)));
     }
 }

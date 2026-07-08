@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -13,6 +14,10 @@ import java.util.UUID;
 @Repository
 public interface OrderRepository extends JpaRepository<Order, UUID> {
     Optional<Order> findByPlatformAndPlatformOrderId(String platform, String platformOrderId);
+
+    Optional<Order> findByConnectionIdAndPlatformOrderId(UUID connectionId, String platformOrderId);
+
+    List<Order> findByConnectionIdAndBusinessDate(UUID connectionId, LocalDate businessDate);
 
     List<Order> findByCreatedAtPlatformGreaterThanEqual(Instant since);
 

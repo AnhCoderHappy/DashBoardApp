@@ -20,6 +20,9 @@ public class WebhookEvent {
     @Column(nullable = false)
     private String platform;
 
+    @Column(name = "connection_id")
+    private UUID connectionId;
+
     @Column(name = "event_type")
     private String eventType;
 
@@ -30,6 +33,24 @@ public class WebhookEvent {
     private String platformObjectId;
 
     private String status = "pending";
+
+    @Column(name = "payload_hash")
+    private String payloadHash;
+
+    @Column(name = "attempt_count")
+    private Integer attemptCount = 0;
+
+    @Column(name = "next_retry_at")
+    private Instant nextRetryAt;
+
+    @Column(name = "locked_at")
+    private Instant lockedAt;
+
+    @Column(name = "locked_by")
+    private String lockedBy;
+
+    @Column(name = "event_updated_at_platform")
+    private Instant eventUpdatedAtPlatform;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(nullable = false)

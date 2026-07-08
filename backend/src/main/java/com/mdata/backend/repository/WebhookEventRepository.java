@@ -12,4 +12,6 @@ public interface WebhookEventRepository extends JpaRepository<WebhookEvent, UUID
     Optional<WebhookEvent> findByPlatformAndEventId(String platform, String eventId);
 
     List<WebhookEvent> findByStatus(String status);
+
+    List<WebhookEvent> findTop50ByStatusAndNextRetryAtBeforeOrderByReceivedAtAsc(String status, java.time.Instant nextRetryAt);
 }

@@ -8,7 +8,9 @@ import com.mdata.backend.repository.OrderItemRepository;
 import com.mdata.backend.repository.OrderRepository;
 import com.mdata.backend.repository.PlatformConnectionRepository;
 import com.mdata.backend.repository.AdInsightsHourlyRepository;
+import com.mdata.backend.service.DashboardProjectionService;
 import com.mdata.backend.service.MetricsService;
+import com.mdata.backend.service.OrderIngestionService;
 import com.mdata.backend.service.TokenService;
 import com.mdata.backend.entity.PlatformConnection;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,6 +35,8 @@ public class PancakeConnector implements PlatformConnector {
     private final PlatformConnectionRepository connectionRepository;
     private final TokenService tokenService;
     private final AdInsightsHourlyRepository adInsightsHourlyRepository;
+    private final OrderIngestionService orderIngestionService;
+    private final DashboardProjectionService dashboardProjectionService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final boolean mockPlatforms;
 
@@ -49,6 +53,8 @@ public class PancakeConnector implements PlatformConnector {
             PlatformConnectionRepository connectionRepository,
             TokenService tokenService,
             AdInsightsHourlyRepository adInsightsHourlyRepository,
+            OrderIngestionService orderIngestionService,
+            DashboardProjectionService dashboardProjectionService,
             @Value("${MOCK_PLATFORMS:false}") String mockPlatforms
     ) {
         this.orderRepository = orderRepository;
@@ -56,6 +62,8 @@ public class PancakeConnector implements PlatformConnector {
         this.connectionRepository = connectionRepository;
         this.tokenService = tokenService;
         this.adInsightsHourlyRepository = adInsightsHourlyRepository;
+        this.orderIngestionService = orderIngestionService;
+        this.dashboardProjectionService = dashboardProjectionService;
         this.mockPlatforms = "true".equalsIgnoreCase(mockPlatforms);
     }
 
@@ -162,10 +170,8 @@ public class PancakeConnector implements PlatformConnector {
         
         var jsonNode = objectMapper.readTree(response.body());
         if (jsonNode.has("data") && jsonNode.get("data").isArray()) {
-            var dataArray = jsonNode.get("data");
-            for (var node : dataArray) {
-                saveOrderFromJsonNode(node, connectionId);
-            }
+            var result = orderIngestionService.processPancakePayload(connectionId, jsonNode.get("data").toString(), null);
+            dashboardProjectionService.updateProjection(result);
         }
     }
 
@@ -176,10 +182,12 @@ public class PancakeConnector implements PlatformConnector {
         }
         if (node.isArray()) {
             for (var orderNode : node) {
-                saveOrderFromJsonNode(orderNode, connectionId);
+                var result = orderIngestionService.processPancakeOrder(connectionId, orderNode, null);
+                dashboardProjectionService.updateProjection(result);
             }
         } else {
-            saveOrderFromJsonNode(node, connectionId);
+            var result = orderIngestionService.processPancakeOrder(connectionId, node, null);
+            dashboardProjectionService.updateProjection(result);
         }
     }
 
@@ -563,19 +571,20 @@ public class PancakeConnector implements PlatformConnector {
         Instant threshold = since != null ? since : Instant.now().minus(24, ChronoUnit.HOURS);
         int count = 5 + (int) (Math.random() * 10);
         
-        String[] mockPlatforms = {"shopee", "tiktok-shop", "facebook-ads", "haravan"};
+        String[] mockPlatforms = {"shopee", "tiktok-shop", "facebook", "pos"};
 
         for (int i = 0; i < count; i++) {
             Order order = new Order();
             String platform = mockPlatforms[i % mockPlatforms.length];
-            order.setPlatform(platform); // Treat Pancake source as the actual platform it came from
+            order.setPlatform("pancake");
+            order.setSourceChannel(platform);
             order.setPlatformOrderId("PCK-" + System.currentTimeMillis() + "-" + i);
             order.setConnectionId(connectionId);
             
             double r = Math.random();
             String status = r < 0.7 ? "PAID" : r < 0.9 ? "CANCELLED" : "REFUNDED";
             order.setStatus(status);
-            order.setNormalizedStatus(MetricsService.normalizeOrderStatus(platform, status));
+            order.setNormalizedStatus(MetricsService.normalizeOrderStatus("pancake", status));
 
             BigDecimal gross = BigDecimal.valueOf(150000 + Math.random() * 300000);
             BigDecimal discount = BigDecimal.valueOf(Math.random() * 20000);
@@ -587,6 +596,9 @@ public class PancakeConnector implements PlatformConnector {
             order.setCurrency("VND");
             order.setCustomerName(List.of("Nguyen Van A", "Tran Thi B", "Le Van C").get(i % 3));
             order.setCreatedAtPlatform(threshold.plus(i * 2, ChronoUnit.HOURS));
+            order.setBusinessTime(order.getCreatedAtPlatform());
+            order.setBusinessDate(order.getCreatedAtPlatform().atZone(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).toLocalDate());
+            order.setBusinessHour(order.getCreatedAtPlatform().atZone(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).getHour());
             order.setUpdatedAtPlatform(Instant.now());
             order.setRawData("{\"source\":\"pancake\", \"mock\":true}");
             order.setUpdatedAt(Instant.now());

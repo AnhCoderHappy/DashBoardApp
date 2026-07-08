@@ -6,12 +6,13 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Data
 @Entity
 @Table(name = "orders", uniqueConstraints = {
-    @UniqueConstraint(columnNames = {"platform", "platform_order_id"})
+    @UniqueConstraint(columnNames = {"connection_id", "platform_order_id"})
 })
 public class Order {
     @Id
@@ -20,6 +21,9 @@ public class Order {
 
     @Column(nullable = false)
     private String platform;
+
+    @Column(name = "source_channel")
+    private String sourceChannel = "unknown";
 
     @Column(name = "platform_order_id", nullable = false)
     private String platformOrderId;
@@ -55,6 +59,21 @@ public class Order {
 
     @Column(name = "updated_at_platform")
     private Instant updatedAtPlatform;
+
+    @Column(name = "business_time")
+    private Instant businessTime;
+
+    @Column(name = "business_date")
+    private LocalDate businessDate;
+
+    @Column(name = "business_hour")
+    private Integer businessHour;
+
+    @Column(name = "external_updated_at_platform")
+    private Instant externalUpdatedAtPlatform;
+
+    @Column(name = "external_version")
+    private String externalVersion;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "raw_data")

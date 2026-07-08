@@ -51,6 +51,16 @@ public class MetricsService {
         return "pos";
     }
 
+    private String orderSourceChannel(Order order) {
+        if (order.getSourceChannel() != null && !order.getSourceChannel().isBlank()) {
+            return order.getSourceChannel();
+        }
+        if ("pancake".equals(order.getPlatform())) {
+            return getPancakeSourcePlatform(order.getRawData());
+        }
+        return order.getPlatform();
+    }
+
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final AdInsightsHourlyRepository adInsightsHourlyRepository;
@@ -140,10 +150,7 @@ public class MetricsService {
         for (Order order : orders) {
             Instant hour = order.getCreatedAtPlatform().truncatedTo(ChronoUnit.HOURS);
             String shopId = order.getConnectionId() != null ? connectionToShopId.getOrDefault(order.getConnectionId(), "unknown") : "unknown";
-            String platform = order.getPlatform();
-            if ("pancake".equals(platform)) {
-                platform = getPancakeSourcePlatform(order.getRawData());
-            }
+            String platform = orderSourceChannel(order);
             String key = platform + "_" + shopId + "_" + hour.toString();
 
             final String finalPlatform = platform;
@@ -217,10 +224,7 @@ public class MetricsService {
         for (Order order : orders) {
             LocalDate localDate = order.getCreatedAtPlatform().atZone(VN_ZONE).toLocalDate();
             String shopId = order.getConnectionId() != null ? connectionToShopId.getOrDefault(order.getConnectionId(), "unknown") : "unknown";
-            String platform = order.getPlatform();
-            if ("pancake".equals(platform)) {
-                platform = getPancakeSourcePlatform(order.getRawData());
-            }
+            String platform = orderSourceChannel(order);
             String key = platform + "_" + shopId + "_" + localDate.toString();
 
             final String finalPlatform = platform;
@@ -293,10 +297,7 @@ public class MetricsService {
         for (Order order : orders) {
             LocalDate localDate = order.getCreatedAtPlatform().atZone(VN_ZONE).toLocalDate();
             String shopId = order.getConnectionId() != null ? connectionToShopId.getOrDefault(order.getConnectionId(), "unknown") : "unknown";
-            String platform = order.getPlatform();
-            if ("pancake".equals(platform)) {
-                platform = getPancakeSourcePlatform(order.getRawData());
-            }
+            String platform = orderSourceChannel(order);
             String key = platform + "_" + shopId + "_" + localDate.toString();
 
             final String finalPlatform = platform;
@@ -369,10 +370,7 @@ public class MetricsService {
         for (Order order : orders) {
             Instant hour = order.getCreatedAtPlatform().truncatedTo(ChronoUnit.HOURS);
             String shopId = order.getConnectionId() != null ? connectionToShopId.getOrDefault(order.getConnectionId(), "unknown") : "unknown";
-            String platform = order.getPlatform();
-            if ("pancake".equals(platform)) {
-                platform = getPancakeSourcePlatform(order.getRawData());
-            }
+            String platform = orderSourceChannel(order);
             String key = platform + "_" + shopId + "_" + hour.toString();
 
             final String finalPlatform = platform;
@@ -928,10 +926,7 @@ public class MetricsService {
                     r.setCreatedAt(o.getCreatedAtPlatform().atZone(VN_ZONE).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
                     r.setOrderCode(o.getPlatformOrderId());
                     r.setCustomerDisplayName(o.getCustomerName() != null ? o.getCustomerName() : "Khách Hàng");
-                    String platform = o.getPlatform();
-                    if ("pancake".equals(platform)) {
-                        platform = getPancakeSourcePlatform(o.getRawData());
-                    }
+                    String platform = orderSourceChannel(o);
                     r.setPlatform(platform);
                     r.setOrderValue(o.getNetRevenue());
                     return r;
@@ -974,7 +969,7 @@ public class MetricsService {
             Integer qty = row[3] != null ? ((Number) row[3]).intValue() : 0;
             BigDecimal totalP = row[4] != null ? (BigDecimal) row[4] : BigDecimal.ZERO;
 
-            String finalPlat = "pancake".equals(plat) && rawD != null ? getPancakeSourcePlatform(rawD) : plat;
+            String finalPlat = plat;
 
             String key = prodName + "_" + finalPlat;
             TopProductByChannelAgg agg = aggMap.computeIfAbsent(key, k -> new TopProductByChannelAgg(prodName, finalPlat));
