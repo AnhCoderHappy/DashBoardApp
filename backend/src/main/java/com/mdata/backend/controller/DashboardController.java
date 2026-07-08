@@ -82,7 +82,7 @@ public class DashboardController {
         LocalDate targetDate = date != null && !date.isBlank()
                 ? LocalDate.parse(date)
                 : LocalDate.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
-        var data = dashboardSnapshotService.currentForShop(shopId, targetDate);
+        var data = dashboardSnapshotService.currentForShop(shopId, targetDate, refresh);
         if (refresh) {
             data = data.withRefreshQueued(true);
         }

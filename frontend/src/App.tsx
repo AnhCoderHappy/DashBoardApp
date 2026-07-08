@@ -50,12 +50,17 @@ export default function App() {
   };
 
   // Fetch metrics handler
-  const fetchMetrics = async (forceRefreshIndicator = false, targetShopId = selectedShopId, targetDate = selectedDate) => {
+  const fetchMetrics = async (
+    forceRefreshIndicator = false,
+    targetShopId = selectedShopId,
+    targetDate = selectedDate,
+    refreshFromServer = forceRefreshIndicator
+  ) => {
     if (forceRefreshIndicator) setIsRefreshing(true);
     
     // API Mode
     try {
-      const response = await fetch(`${API_BASE_URL}/api/dashboard/live?shopId=${targetShopId}&date=${targetDate}${forceRefreshIndicator ? '&refresh=true' : ''}`);
+      const response = await fetch(`${API_BASE_URL}/api/dashboard/live?shopId=${targetShopId}&date=${targetDate}${refreshFromServer ? '&refresh=true' : ''}`);
       if (!response.ok) {
         throw new Error(`API returned HTTP ${response.status}`);
       }
@@ -127,9 +132,15 @@ export default function App() {
     
     const refreshFromSse = (event: MessageEvent) => {
       console.log('[SSE] Real-time order update received. Refreshing metrics...', event.data);
-      fetchMetrics(false, shopIdRef.current, dateRef.current);
+      fetchMetrics(false, shopIdRef.current, dateRef.current, true);
     };
 
+    const refreshAfterReceive = (event: MessageEvent) => {
+      console.log('[SSE] Order received. Refreshing after backend projection...', event.data);
+      setTimeout(() => fetchMetrics(false, shopIdRef.current, dateRef.current, true), 1500);
+    };
+
+    eventSource.addEventListener('ORDER_RECEIVED', refreshAfterReceive);
     eventSource.addEventListener('ORDER_CONFIRMED', refreshFromSse);
     eventSource.addEventListener('DASHBOARD_DELTA', refreshFromSse);
     eventSource.addEventListener('order-update', refreshFromSse);

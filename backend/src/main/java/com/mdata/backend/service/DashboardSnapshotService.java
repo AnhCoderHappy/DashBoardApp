@@ -47,13 +47,17 @@ public class DashboardSnapshotService {
                 .orElseGet(() -> loadOrRebuild(connectionId, date));
     }
 
-    public DashboardSnapshotResponse currentForShop(String shopId, LocalDate date) {
+    public DashboardSnapshotResponse currentForShop(String shopId, LocalDate date, boolean forceRefresh) {
         PlatformConnection connection = connectionRepository.findByPlatform("pancake").stream()
                 .filter(c -> shopId.equals(c.getShopId()))
                 .findFirst()
                 .orElse(null);
         if (connection == null) {
-            return response(null, date, 0L, null, null, "rebuilt", metricsService.getLiveDashboardData(shopId, date.toString(), false));
+            return response(null, date, 0L, null, null, "rebuilt", metricsService.getLiveDashboardData(shopId, date.toString(), forceRefresh));
+        }
+        if (forceRefresh) {
+            cacheService.evictDate(connection.getId(), date);
+            return rebuildBootstrapSnapshot(connection.getId(), date);
         }
         return getBootstrapSnapshot(connection.getId(), date);
     }
