@@ -15,7 +15,6 @@ import com.mdata.backend.service.OrderIngestionService;
 import com.mdata.backend.service.TokenService;
 import com.mdata.backend.entity.PlatformConnection;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -41,7 +40,6 @@ public class PancakeConnector implements PlatformConnector {
     private final DashboardProjectionService dashboardProjectionService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final boolean mockPlatforms;
-    private static final Object ADS_INSIGHTS_SAVE_LOCK = new Object();
 
     @Value("${PANCAKE_API_BASE:https://pos.pages.fm/api/v1}")
     private String apiBase;
@@ -462,21 +460,24 @@ public class PancakeConnector implements PlatformConnector {
         }
 
         AdInsightsHourly values = buildShopAdsInsight(shopId, hour, agg, spend, impressions, clicks, reach);
-        synchronized (ADS_INSIGHTS_SAVE_LOCK) {
-            AdInsightsHourly insight = adInsightsHourlyRepository
-                    .findByPlatformAndShopIdAndHour("facebook-ads", shopId, hour)
-                    .orElseGet(AdInsightsHourly::new);
-            copyAdInsightValues(values, insight);
-            try {
-                adInsightsHourlyRepository.saveAndFlush(insight);
-            } catch (DataIntegrityViolationException duplicate) {
-                AdInsightsHourly existing = adInsightsHourlyRepository
-                        .findByPlatformAndShopIdAndHour("facebook-ads", shopId, hour)
-                        .orElseThrow(() -> duplicate);
-                copyAdInsightValues(values, existing);
-                adInsightsHourlyRepository.saveAndFlush(existing);
-            }
-        }
+        adInsightsHourlyRepository.upsertByPlatformShopIdHour(
+                UUID.randomUUID(),
+                values.getPlatform(),
+                values.getShopId(),
+                values.getAdAccountId(),
+                values.getCampaignId(),
+                values.getCampaignName(),
+                values.getHour(),
+                values.getSpend(),
+                values.getImpressions(),
+                values.getClicks(),
+                values.getReach(),
+                values.getCpc(),
+                values.getCpm(),
+                values.getCtr(),
+                values.getRawData(),
+                values.getCreatedAt()
+        );
     }
 
     private AdInsightsHourly buildShopAdsInsight(
@@ -513,24 +514,6 @@ public class PancakeConnector implements PlatformConnector {
         insight.setRawData(objectMapper.writeValueAsString(rawMap));
         insight.setCreatedAt(Instant.now());
         return insight;
-    }
-
-    private void copyAdInsightValues(AdInsightsHourly source, AdInsightsHourly target) {
-        target.setPlatform(source.getPlatform());
-        target.setShopId(source.getShopId());
-        target.setAdAccountId(source.getAdAccountId());
-        target.setCampaignId(source.getCampaignId());
-        target.setCampaignName(source.getCampaignName());
-        target.setHour(source.getHour());
-        target.setSpend(source.getSpend());
-        target.setImpressions(source.getImpressions());
-        target.setClicks(source.getClicks());
-        target.setReach(source.getReach());
-        target.setCpc(source.getCpc());
-        target.setCpm(source.getCpm());
-        target.setCtr(source.getCtr());
-        target.setRawData(source.getRawData());
-        target.setCreatedAt(source.getCreatedAt());
     }
 
     private BigDecimal safeBigDecimal(com.fasterxml.jackson.databind.JsonNode node, String field) {
