@@ -10,7 +10,7 @@ public class SseService {
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
     public SseEmitter registerClient() {
-        SseEmitter emitter = new SseEmitter(180_000L); // 3 minutes timeout
+        SseEmitter emitter = new SseEmitter(0L);
         emitters.add(emitter);
         
         emitter.onCompletion(() -> emitters.remove(emitter));

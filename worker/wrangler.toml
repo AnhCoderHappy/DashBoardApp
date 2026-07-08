@@ -5,7 +5,7 @@ compatibility_date = "2024-02-22"
 [vars]
 SUPABASE_URL = "https://your-supabase-project.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY = "your-service-role-key"
-BACKEND_URL = "https://mdata-backend.onrender.com"
+BACKEND_URL = "https://dashboardapp-86fg.onrender.com"
 CRON_SECRET = "your-cron-secret"
 
 [triggers]

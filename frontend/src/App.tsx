@@ -125,11 +125,14 @@ export default function App() {
     const sseUrl = `${API_BASE_URL}/api/dashboard/realtime-stream`;
     const eventSource = new EventSource(sseUrl);
     
-    eventSource.addEventListener('order-update', (event) => {
+    const refreshFromSse = (event: MessageEvent) => {
       console.log('[SSE] Real-time order update received. Refreshing metrics...', event.data);
-      // Trigger a silent reload (false) to update the dashboard instantly without flickering
       fetchMetrics(false, shopIdRef.current, dateRef.current);
-    });
+    };
+
+    eventSource.addEventListener('ORDER_CONFIRMED', refreshFromSse);
+    eventSource.addEventListener('DASHBOARD_DELTA', refreshFromSse);
+    eventSource.addEventListener('order-update', refreshFromSse);
 
     eventSource.onerror = (err) => {
       console.warn('[SSE] EventSource connection encountered an error, will retry automatically:', err);

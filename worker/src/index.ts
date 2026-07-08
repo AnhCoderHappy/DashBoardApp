@@ -30,8 +30,9 @@ export default {
         });
       }
 
-      const platform = path.split('/')[2];
-      const validPlatforms = ['haravan', 'shopee', 'tiktok-shop', 'meta', 'tiktok-ads'];
+      const pathParts = path.split('/');
+      const platform = pathParts[2];
+      const validPlatforms = ['pancake', 'haravan', 'shopee', 'tiktok-shop', 'meta', 'tiktok-ads'];
 
       if (!validPlatforms.includes(platform)) {
         return new Response(JSON.stringify({ error: 'Unsupported platform webhook' }), {
@@ -42,6 +43,34 @@ export default {
 
       try {
         const textPayload = await request.text();
+
+        if (platform === 'pancake') {
+          const shopId = pathParts[3];
+          if (!shopId) {
+            return new Response(JSON.stringify({ error: 'Missing Pancake shopId' }), {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+
+          const backendUrl = `${env.BACKEND_URL}/api/webhooks/pancake/${encodeURIComponent(shopId)}`;
+          const backendResponse = await fetch(backendUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': request.headers.get('Content-Type') || 'application/json',
+            },
+            body: textPayload,
+          });
+
+          return new Response(await backendResponse.text(), {
+            status: backendResponse.status,
+            headers: {
+              'Content-Type': backendResponse.headers.get('Content-Type') || 'application/json',
+              'Access-Control-Allow-Origin': '*',
+            },
+          });
+        }
+
         let payload: any;
         try {
           payload = JSON.parse(textPayload);
