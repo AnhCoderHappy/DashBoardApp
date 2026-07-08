@@ -126,6 +126,7 @@ public class MetricsService {
         Instant since = Instant.now().minus(sinceHours, ChronoUnit.HOURS).truncatedTo(ChronoUnit.HOURS);
 
         hourlyMetricsRepository.deleteByHourGreaterThanEqual(since);
+        hourlyMetricsRepository.flush();
 
         List<Order> orders = orderRepository.findByCreatedAtPlatformGreaterThanEqual(since);
         List<AdInsightsHourly> adInsights = adInsightsHourlyRepository.findByHourGreaterThanEqual(since);
@@ -201,6 +202,7 @@ public class MetricsService {
         LocalDate sinceDate = LocalDate.now(VN_ZONE).minusDays(sinceDays);
 
         dailyMetricsRepository.deleteByDateGreaterThanEqual(sinceDate);
+        dailyMetricsRepository.flush();
 
         Instant since = sinceDate.atStartOfDay(VN_ZONE).toInstant();
 
@@ -275,6 +277,7 @@ public class MetricsService {
     @Transactional
     public void rebuildDailyMetricsForDate(LocalDate targetDate) {
         dailyMetricsRepository.deleteByDate(targetDate);
+        dailyMetricsRepository.flush();
 
         Instant startUTC = targetDate.atStartOfDay(VN_ZONE).toInstant();
         Instant endUTC = targetDate.plusDays(1).atStartOfDay(VN_ZONE).toInstant();
@@ -353,6 +356,7 @@ public class MetricsService {
         Instant end = targetDate.plusDays(1).atStartOfDay(VN_ZONE).toInstant();
 
         hourlyMetricsRepository.deleteByHourBetween(start, end);
+        hourlyMetricsRepository.flush();
 
         List<Order> orders = orderRepository.findByCreatedAtPlatformBetween(start, end);
         List<AdInsightsHourly> adInsights = adInsightsHourlyRepository.findByHourBetween(start, end);
