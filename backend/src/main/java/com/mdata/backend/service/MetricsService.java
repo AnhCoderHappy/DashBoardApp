@@ -262,7 +262,7 @@ public class MetricsService {
                 metric.setRoas(BigDecimal.ZERO);
             }
             metric.setUpdatedAt(Instant.now());
-            hourlyMetricsRepository.save(metric);
+            upsertHourlyMetric(metric);
         }
     }
 
@@ -482,8 +482,26 @@ public class MetricsService {
                 metric.setRoas(BigDecimal.ZERO);
             }
             metric.setUpdatedAt(Instant.now());
-            hourlyMetricsRepository.save(metric);
+            upsertHourlyMetric(metric);
         }
+    }
+
+    private void upsertHourlyMetric(HourlyMetrics metric) {
+        hourlyMetricsRepository.upsertByPlatformShopIdHour(
+                UUID.randomUUID(),
+                metric.getPlatform(),
+                metric.getShopId(),
+                metric.getHour(),
+                metric.getOrderCount(),
+                metric.getGrossRevenue(),
+                metric.getNetRevenue(),
+                metric.getCancelledCount(),
+                metric.getRefundCount(),
+                metric.getAdSpend(),
+                metric.getRoas(),
+                metric.getCreatedAt(),
+                metric.getUpdatedAt()
+        );
     }
 
     public DashboardDataDto getLiveDashboardData(String filterShopId, String dateStr, boolean forceRefresh) {
