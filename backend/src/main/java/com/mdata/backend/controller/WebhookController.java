@@ -1,21 +1,26 @@
 package com.mdata.backend.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mdata.backend.entity.PlatformConnection;
 import com.mdata.backend.entity.WebhookEvent;
 import com.mdata.backend.repository.PlatformConnectionRepository;
 import com.mdata.backend.repository.WebhookEventRepository;
 import com.mdata.backend.service.DashboardProjectionService;
 import com.mdata.backend.service.OrderIngestionService;
+import com.mdata.backend.service.PancakeOrderNormalizer;
 import com.mdata.backend.service.SseService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
@@ -26,7 +31,9 @@ public class WebhookController {
     private final WebhookEventRepository webhookEventRepository;
     private final OrderIngestionService orderIngestionService;
     private final DashboardProjectionService dashboardProjectionService;
+    private final PancakeOrderNormalizer pancakeOrderNormalizer;
     private final SseService sseService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
     private static final DateTimeFormatter VN_OFFSET_FORMATTER =
             DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(ZoneId.of("Asia/Ho_Chi_Minh"));
 
@@ -35,12 +42,14 @@ public class WebhookController {
             WebhookEventRepository webhookEventRepository,
             OrderIngestionService orderIngestionService,
             DashboardProjectionService dashboardProjectionService,
+            PancakeOrderNormalizer pancakeOrderNormalizer,
             SseService sseService
     ) {
         this.connectionRepository = connectionRepository;
         this.webhookEventRepository = webhookEventRepository;
         this.orderIngestionService = orderIngestionService;
         this.dashboardProjectionService = dashboardProjectionService;
+        this.pancakeOrderNormalizer = pancakeOrderNormalizer;
         this.sseService = sseService;
     }
 
@@ -68,12 +77,13 @@ public class WebhookController {
             event.setReceivedAt(Instant.now());
             WebhookEvent savedEvent = webhookEventRepository.save(event);
 
-            sseService.broadcast("ORDER_RECEIVED", Map.of(
-                    "connectionId", conn.getId(),
-                    "shopId", shopId,
-                    "eventId", savedEvent.getId(),
-                    "receivedAt", VN_OFFSET_FORMATTER.format(savedEvent.getReceivedAt())
-            ));
+            Map<String, Object> receivedPayload = new LinkedHashMap<>();
+            receivedPayload.put("connectionId", conn.getId());
+            receivedPayload.put("shopId", shopId);
+            receivedPayload.put("eventId", savedEvent.getId());
+            receivedPayload.put("receivedAt", VN_OFFSET_FORMATTER.format(savedEvent.getReceivedAt()));
+            receivedPayload.put("order", previewOrder(payloadBody, conn));
+            sseService.broadcast("ORDER_RECEIVED", receivedPayload);
 
             java.util.concurrent.CompletableFuture.runAsync(() -> {
                 WebhookEvent processingEvent = webhookEventRepository.findById(savedEvent.getId()).orElse(null);
@@ -119,5 +129,33 @@ public class WebhookController {
     private String sha256(String payload) throws Exception {
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         return HexFormat.of().formatHex(digest.digest(payload.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    private Map<String, Object> previewOrder(String payloadBody, PlatformConnection conn) {
+        try {
+            JsonNode orderNode = firstOrderNode(objectMapper.readTree(payloadBody));
+            if (orderNode == null || orderNode.isMissingNode() || orderNode.isNull()) {
+                return null;
+            }
+            var order = pancakeOrderNormalizer.normalize(orderNode, conn.getId());
+            Map<String, Object> preview = new LinkedHashMap<>();
+            preview.put("id", "pending-" + order.platformOrderId());
+            preview.put("createdAt", VN_OFFSET_FORMATTER.format(order.businessTime()));
+            preview.put("orderCode", order.platformOrderId());
+            preview.put("customerDisplayName", order.customerName());
+            preview.put("platform", order.sourceChannel());
+            preview.put("orderValue", order.netRevenue() != null ? order.netRevenue() : BigDecimal.ZERO);
+            return preview;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private JsonNode firstOrderNode(JsonNode root) {
+        JsonNode data = root.has("data") ? root.get("data") : root;
+        if (data.isArray()) {
+            return data.isEmpty() ? null : data.get(0);
+        }
+        return data;
     }
 }

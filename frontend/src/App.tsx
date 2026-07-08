@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import DashboardPage from './components/dashboard/DashboardPage';
 import DashboardSkeleton from './components/dashboard/DashboardSkeleton';
-import { DashboardData } from './types/dashboard';
+import { DashboardData, RealtimeOrder } from './types/dashboard';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 const POLLING_INTERVAL_MS = Number(import.meta.env.VITE_POLLING_INTERVAL_MS || 30000);
@@ -47,6 +47,29 @@ export default function App() {
     params.set('date', date);
     const newRelativePathQuery = window.location.pathname + '?' + params.toString();
     window.history.replaceState(null, '', newRelativePathQuery);
+  };
+
+  const showReceivedOrder = (event: MessageEvent) => {
+    try {
+      const payload = JSON.parse(event.data);
+      const order = payload.order as RealtimeOrder | null | undefined;
+      if (!order || !payload.shopId) return;
+      if (shopIdRef.current !== 'all' && shopIdRef.current !== payload.shopId) return;
+      if (order.createdAt.slice(0, 10) !== dateRef.current) return;
+
+      setData((current) => {
+        if (!current) return current;
+        const realtimeOrders = [
+          order,
+          ...current.realtimeOrders.filter((existing) => existing.orderCode !== order.orderCode)
+        ].slice(0, 10);
+        const next = { ...current, realtimeOrders, lastUpdatedAt: payload.receivedAt || current.lastUpdatedAt };
+        lastValidDataRef.current = next;
+        return next;
+      });
+    } catch (err) {
+      console.warn('[SSE] Unable to parse received order preview:', err);
+    }
   };
 
   // Fetch metrics handler
@@ -137,6 +160,7 @@ export default function App() {
 
     const refreshAfterReceive = (event: MessageEvent) => {
       console.log('[SSE] Order received. Refreshing after backend projection...', event.data);
+      showReceivedOrder(event);
       setTimeout(() => fetchMetrics(false, shopIdRef.current, dateRef.current, true), 1500);
     };
 

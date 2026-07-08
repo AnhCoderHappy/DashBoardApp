@@ -39,7 +39,7 @@ export interface RealtimeOrder {
   createdAt: string;
   orderCode: string;
   customerDisplayName: string;
-  platform: 'haravan' | 'shopee' | 'tiktok-shop';
+  platform: string;
   orderValue: number;
 }
 
