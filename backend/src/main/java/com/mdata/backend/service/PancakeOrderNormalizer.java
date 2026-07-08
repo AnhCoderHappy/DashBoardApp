@@ -119,7 +119,7 @@ public class PancakeOrderNormalizer {
                     return Instant.parse(clean);
                 }
                 return LocalDateTime.parse(clean, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-                        .atZone(BUSINESS_ZONE)
+                        .atZone(ZoneOffset.UTC)
                         .toInstant();
             } catch (Exception ignored) {
                 // ponytail: unsupported vendor date formats fall back to now; add patterns when Pancake sample proves them.

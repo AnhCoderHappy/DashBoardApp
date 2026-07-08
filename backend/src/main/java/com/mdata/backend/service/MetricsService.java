@@ -86,7 +86,7 @@ public class MetricsService {
                     if (clean.endsWith("Z") || clean.contains("+")) {
                         return Instant.parse(clean);
                     }
-                    return LocalDateTime.parse(clean).atZone(VN_ZONE).toInstant();
+                    return LocalDateTime.parse(clean).atZone(java.time.ZoneOffset.UTC).toInstant();
                 }
             } catch (Exception ignored) {
                 // ponytail: old raw Pancake variants fall back to stored platform time; add patterns when sample proves them.

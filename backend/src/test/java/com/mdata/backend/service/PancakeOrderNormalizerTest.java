@@ -35,4 +35,15 @@ class PancakeOrderNormalizerTest {
         assertThat(normalized.businessDate()).isEqualTo(LocalDate.of(2026, 7, 8));
         assertThat(normalized.businessHour()).isEqualTo(1);
     }
+
+    @Test
+    void treatsPancakeNaiveTimestampAsUtc() throws Exception {
+        var order = objectMapper.readTree("""
+                {"id":"P3","source":"Shopee","status":"3","inserted_at":"2026-07-08T12:23:20"}
+                """);
+
+        var normalized = normalizer.normalize(order, UUID.randomUUID());
+
+        assertThat(normalized.businessHour()).isEqualTo(19);
+    }
 }
