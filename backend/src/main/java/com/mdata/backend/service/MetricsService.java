@@ -131,6 +131,7 @@ public class MetricsService {
     private final PlatformConnectionRepository connectionRepository;
 
     private static final ZoneId VN_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final DateTimeFormatter VN_OFFSET_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(VN_ZONE);
     private final Map<String, DashboardDataDto> dashboardCache = new java.util.concurrent.ConcurrentHashMap<>();
 
     public void clearDashboardCache() {
@@ -691,8 +692,8 @@ public class MetricsService {
             DashboardDataDto.PlatformHealthDetailsDto details = new DashboardDataDto.PlatformHealthDetailsDto();
             details.setStatus(h.getStatus());
             details.setLabel("LIVE".equalsIgnoreCase(h.getStatus()) || "ok".equalsIgnoreCase(h.getStatus()) ? "LIVE" : "Near-time");
-            details.setLastSuccessAt(h.getLastSuccessAt() != null ? h.getLastSuccessAt().toString() : null);
-            details.setLastErrorAt(h.getLastErrorAt() != null ? h.getLastErrorAt().toString() : null);
+            details.setLastSuccessAt(h.getLastSuccessAt() != null ? VN_OFFSET_FORMATTER.format(h.getLastSuccessAt()) : null);
+            details.setLastErrorAt(h.getLastErrorAt() != null ? VN_OFFSET_FORMATTER.format(h.getLastErrorAt()) : null);
             healthMap.put(h.getPlatform(), details);
         }
         // Ensure default map values if empty

@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -22,6 +24,8 @@ public class DashboardController {
     private final DashboardSnapshotService dashboardSnapshotService;
     private final com.mdata.backend.service.SseService sseService;
     private final long startTime = System.currentTimeMillis();
+    private static final DateTimeFormatter VN_OFFSET_FORMATTER =
+            DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(ZoneId.of("Asia/Ho_Chi_Minh"));
 
     public DashboardController(
             PlatformConnectionRepository connectionRepository,
@@ -49,7 +53,7 @@ public class DashboardController {
 
         report.put("ok", dbOk);
         report.put("service", "mdata-backend");
-        report.put("timestamp", Instant.now().toString());
+        report.put("timestamp", VN_OFFSET_FORMATTER.format(Instant.now()));
         report.put("uptime", (System.currentTimeMillis() - startTime) / 1000.0);
         report.put("database", dbOk ? "ok" : "error");
         if (details != null) {

@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -20,6 +21,7 @@ import java.util.UUID;
 public class DashboardSnapshotService {
     public static final String BOOTSTRAP = "BOOTSTRAP";
     private static final ZoneId VN_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final DateTimeFormatter VN_OFFSET_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(VN_ZONE);
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final DashboardSnapshotRepository snapshotRepository;
@@ -128,8 +130,8 @@ public class DashboardSnapshotService {
         meta.put("connectionId", connectionId);
         meta.put("date", date.toString());
         meta.put("version", version);
-        meta.put("generatedAt", generatedAt != null ? generatedAt.toString() : null);
-        meta.put("lastSyncedAt", lastSyncedAt != null ? lastSyncedAt.toString() : null);
+        meta.put("generatedAt", generatedAt != null ? VN_OFFSET_FORMATTER.format(generatedAt) : null);
+        meta.put("lastSyncedAt", lastSyncedAt != null ? VN_OFFSET_FORMATTER.format(lastSyncedAt) : null);
         meta.put("source", source);
         return new DashboardSnapshotResponse(true, payload, meta);
     }

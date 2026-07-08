@@ -1,6 +1,14 @@
+const VN_TIME_ZONE = 'Asia/Ho_Chi_Minh';
+
 export function formatTime(dateStr: string): string {
   const d = new Date(dateStr);
-  return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return `${d.toLocaleTimeString('vi-VN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: VN_TIME_ZONE,
+    hour12: false
+  })} GMT+7`;
 }
 
 export function formatDate(date: Date): string {
@@ -8,7 +16,8 @@ export function formatDate(date: Date): string {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
-    day: 'numeric'
+    day: 'numeric',
+    timeZone: VN_TIME_ZONE
   });
 }
 

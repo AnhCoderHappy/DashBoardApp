@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.*;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
 import java.util.Map;
 
@@ -25,6 +27,8 @@ public class WebhookController {
     private final OrderIngestionService orderIngestionService;
     private final DashboardProjectionService dashboardProjectionService;
     private final SseService sseService;
+    private static final DateTimeFormatter VN_OFFSET_FORMATTER =
+            DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(ZoneId.of("Asia/Ho_Chi_Minh"));
 
     public WebhookController(
             PlatformConnectionRepository connectionRepository,
@@ -68,7 +72,7 @@ public class WebhookController {
                     "connectionId", conn.getId(),
                     "shopId", shopId,
                     "eventId", savedEvent.getId(),
-                    "receivedAt", savedEvent.getReceivedAt().toString()
+                    "receivedAt", VN_OFFSET_FORMATTER.format(savedEvent.getReceivedAt())
             ));
 
             java.util.concurrent.CompletableFuture.runAsync(() -> {

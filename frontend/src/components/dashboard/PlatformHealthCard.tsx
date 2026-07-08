@@ -29,7 +29,7 @@ export default function PlatformHealthCard({
   const formatDateTimeShort = (isoString?: string | null) => {
     if (!isoString) return 'Chưa đồng bộ';
     const d = new Date(isoString);
-    return `${d.toLocaleDateString('vi-VN', { month: '2-digit', day: '2-digit' })} ${formatTime(isoString)}`;
+    return `${d.toLocaleDateString('vi-VN', { month: '2-digit', day: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' })} ${formatTime(isoString)}`;
   };
 
 
