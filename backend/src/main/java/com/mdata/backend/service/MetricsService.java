@@ -336,7 +336,7 @@ public class MetricsService {
                 metric.setRoas(BigDecimal.ZERO);
             }
             metric.setUpdatedAt(Instant.now());
-            dailyMetricsRepository.save(metric);
+            upsertDailyMetric(metric);
         }
     }
 
@@ -409,8 +409,26 @@ public class MetricsService {
                 metric.setRoas(BigDecimal.ZERO);
             }
             metric.setUpdatedAt(Instant.now());
-            dailyMetricsRepository.save(metric);
+            upsertDailyMetric(metric);
         }
+    }
+
+    private void upsertDailyMetric(DailyMetrics metric) {
+        dailyMetricsRepository.upsertByPlatformShopIdDate(
+                UUID.randomUUID(),
+                metric.getPlatform(),
+                metric.getShopId(),
+                metric.getDate(),
+                metric.getOrderCount(),
+                metric.getGrossRevenue(),
+                metric.getNetRevenue(),
+                metric.getCancelledCount(),
+                metric.getRefundCount(),
+                metric.getAdSpend(),
+                metric.getRoas(),
+                metric.getCreatedAt(),
+                metric.getUpdatedAt()
+        );
     }
 
     @Transactional
