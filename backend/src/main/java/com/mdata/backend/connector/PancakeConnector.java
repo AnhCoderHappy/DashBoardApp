@@ -2,6 +2,7 @@ package com.mdata.backend.connector;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.mdata.backend.entity.AdInsightsHourly;
 import com.mdata.backend.entity.Order;
 import com.mdata.backend.entity.OrderItem;
 import com.mdata.backend.repository.OrderItemRepository;
@@ -14,6 +15,7 @@ import com.mdata.backend.service.OrderIngestionService;
 import com.mdata.backend.service.TokenService;
 import com.mdata.backend.entity.PlatformConnection;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -39,6 +41,7 @@ public class PancakeConnector implements PlatformConnector {
     private final DashboardProjectionService dashboardProjectionService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final boolean mockPlatforms;
+    private static final Object ADS_INSIGHTS_SAVE_LOCK = new Object();
 
     @Value("${PANCAKE_API_BASE:https://pos.pages.fm/api/v1}")
     private String apiBase;
@@ -335,8 +338,7 @@ public class PancakeConnector implements PlatformConnector {
         if (jsonNode.has("data") && jsonNode.get("data").isArray()) {
             var dataArray = jsonNode.get("data");
             
-            // Map to aggregate by campaign_id
-            Map<String, CampaignAggregation> campaignMap = new HashMap<>();
+            AdsAggregation agg = new AdsAggregation();
 
             for (var node : dataArray) {
                 try {
@@ -351,10 +353,17 @@ public class PancakeConnector implements PlatformConnector {
                     if (campaignId.isEmpty()) {
                         continue;
                     }
+                    agg.campaignIds.add(campaignId);
+                    if (!campaignName.isBlank()) {
+                        agg.campaignNames.add(campaignName);
+                    }
 
                     String adAccountId = "";
                     if (node.has("ad_account") && !node.get("ad_account").isNull()) {
                         adAccountId = node.get("ad_account").has("id") ? node.get("ad_account").get("id").asText() : "";
+                    }
+                    if (!adAccountId.isBlank()) {
+                        agg.adAccountIds.add(adAccountId);
                     }
 
                     Instant createdTime = Instant.now();
@@ -384,15 +393,6 @@ public class PancakeConnector implements PlatformConnector {
                         reach = safeInt(insNode, "reach");
                     }
 
-                    final String finalCampaignId = campaignId;
-                    CampaignAggregation agg = campaignMap.computeIfAbsent(finalCampaignId, k -> {
-                        CampaignAggregation newAgg = new CampaignAggregation();
-                        newAgg.campaignId = finalCampaignId;
-                        return newAgg;
-                    });
-
-                    agg.adAccountId = adAccountId;
-                    agg.campaignName = campaignName;
                     if (createdTime.isBefore(agg.earliestCreatedTime)) {
                         agg.earliestCreatedTime = createdTime;
                     }
@@ -400,7 +400,7 @@ public class PancakeConnector implements PlatformConnector {
                     agg.totalImpressions += impressions;
                     agg.totalClicks += clicks;
                     agg.totalReach += reach;
-                    agg.rawNode = node;
+                    agg.rawItemCount++;
 
                     // Collect ad-level ID for campaign attribution
                     if (node.has("id") && !node.get("id").isNull()) {
@@ -415,116 +415,122 @@ public class PancakeConnector implements PlatformConnector {
                 }
             }
 
-            // Save aggregated campaigns
-            for (CampaignAggregation agg : campaignMap.values()) {
-                try {
-                    boolean hasExistingRecords = adInsightsHourlyRepository.existsByPlatformAndShopIdAndAdAccountIdAndCampaignId(
-                            "facebook-ads", shopId, agg.adAccountId, agg.campaignId);
-
-                    Instant hour;
-                    if (!hasExistingRecords) {
-                        hour = agg.earliestCreatedTime.truncatedTo(ChronoUnit.HOURS);
-                    } else {
-                        hour = Instant.now().truncatedTo(ChronoUnit.HOURS);
-                    }
-
-                    var existingOpt = adInsightsHourlyRepository.findByPlatformAndShopIdAndHour("facebook-ads", shopId, hour);
-
-                    com.mdata.backend.entity.AdInsightsHourly insight = existingOpt.orElseGet(com.mdata.backend.entity.AdInsightsHourly::new);
-                    insight.setPlatform("facebook-ads");
-                    insight.setShopId(shopId);
-                    insight.setAdAccountId(agg.adAccountId);
-                    insight.setCampaignId(agg.campaignId);
-                    insight.setCampaignName(agg.campaignName);
-                    insight.setHour(hour);
-
-                    if (!hasExistingRecords) {
-                        insight.setSpend(agg.totalSpend);
-                        insight.setImpressions(agg.totalImpressions);
-                        insight.setClicks(agg.totalClicks);
-                        insight.setReach(agg.totalReach);
-                        
-                        BigDecimal cpc = BigDecimal.ZERO;
-                        if (agg.totalClicks > 0) {
-                            cpc = agg.totalSpend.divide(BigDecimal.valueOf(agg.totalClicks), 2, RoundingMode.HALF_UP);
-                        }
-                        BigDecimal cpm = BigDecimal.ZERO;
-                        if (agg.totalImpressions > 0) {
-                            cpm = agg.totalSpend.multiply(BigDecimal.valueOf(1000)).divide(BigDecimal.valueOf(agg.totalImpressions), 2, RoundingMode.HALF_UP);
-                        }
-                        BigDecimal ctr = BigDecimal.ZERO;
-                        if (agg.totalImpressions > 0) {
-                            ctr = BigDecimal.valueOf(agg.totalClicks).multiply(BigDecimal.valueOf(100)).divide(BigDecimal.valueOf(agg.totalImpressions), 2, RoundingMode.HALF_UP);
-                        }
-                        insight.setCpc(cpc);
-                        insight.setCpm(cpm);
-                        insight.setCtr(ctr);
-                    } else {
-                        // Query sums before the current hour
-                        BigDecimal sumSpend = adInsightsHourlyRepository.sumSpendBeforeHour("facebook-ads", shopId, agg.adAccountId, agg.campaignId, hour);
-                        if (sumSpend == null) sumSpend = BigDecimal.ZERO;
-
-                        Long sumImpressions = adInsightsHourlyRepository.sumImpressionsBeforeHour("facebook-ads", shopId, agg.adAccountId, agg.campaignId, hour);
-                        if (sumImpressions == null) sumImpressions = 0L;
-
-                        Long sumClicks = adInsightsHourlyRepository.sumClicksBeforeHour("facebook-ads", shopId, agg.adAccountId, agg.campaignId, hour);
-                        if (sumClicks == null) sumClicks = 0L;
-
-                        Long sumReach = adInsightsHourlyRepository.sumReachBeforeHour("facebook-ads", shopId, agg.adAccountId, agg.campaignId, hour);
-                        if (sumReach == null) sumReach = 0L;
-
-                        // Calculate incremental values
-                        BigDecimal spendInc = agg.totalSpend.subtract(sumSpend);
-                        if (spendInc.compareTo(BigDecimal.ZERO) < 0) spendInc = BigDecimal.ZERO;
-
-                        int impressionsInc = agg.totalImpressions - sumImpressions.intValue();
-                        if (impressionsInc < 0) impressionsInc = 0;
-
-                        int clicksInc = agg.totalClicks - sumClicks.intValue();
-                        if (clicksInc < 0) clicksInc = 0;
-
-                        int reachInc = agg.totalReach - sumReach.intValue();
-                        if (reachInc < 0) reachInc = 0;
-
-                        // Calculate CPC, CPM, CTR for current hour based on increments
-                        BigDecimal cpcInc = BigDecimal.ZERO;
-                        if (clicksInc > 0) {
-                            cpcInc = spendInc.divide(BigDecimal.valueOf(clicksInc), 2, RoundingMode.HALF_UP);
-                        }
-                        BigDecimal cpmInc = BigDecimal.ZERO;
-                        if (impressionsInc > 0) {
-                            cpmInc = spendInc.multiply(BigDecimal.valueOf(1000)).divide(BigDecimal.valueOf(impressionsInc), 2, RoundingMode.HALF_UP);
-                        }
-                        BigDecimal ctrInc = BigDecimal.ZERO;
-                        if (impressionsInc > 0) {
-                            ctrInc = BigDecimal.valueOf(clicksInc).multiply(BigDecimal.valueOf(100)).divide(BigDecimal.valueOf(impressionsInc), 2, RoundingMode.HALF_UP);
-                        }
-
-                        insight.setSpend(spendInc);
-                        insight.setImpressions(impressionsInc);
-                        insight.setClicks(clicksInc);
-                        insight.setReach(reachInc);
-                        insight.setCpc(cpcInc);
-                        insight.setCpm(cpmInc);
-                        insight.setCtr(ctrInc);
-                    }
-
-                    // Build raw_data JSON with ad_ids for campaign attribution
-                    try {
-                        var rawMap = objectMapper.readValue(agg.rawNode.toString(), java.util.Map.class);
-                        rawMap.put("ad_ids", new java.util.ArrayList<>(agg.adIds));
-                        insight.setRawData(objectMapper.writeValueAsString(rawMap));
-                    } catch (Exception ex) {
-                        insight.setRawData(agg.rawNode.toString());
-                    }
-                    insight.setCreatedAt(Instant.now());
-                    adInsightsHourlyRepository.save(insight);
-                } catch (Exception e) {
-                    System.err.println("Failed to save aggregated ad campaign insight: " + e.getMessage());
-                }
+            if (agg.rawItemCount == 0) {
+                System.out.println("[Pancake] No ad insights to process for shop " + shopId + ".");
+                return;
             }
-            System.out.println("[Pancake] Processed " + campaignMap.size() + " aggregated ad campaign insight records.");
+
+            saveShopAdsInsight(shopId, agg);
+            System.out.println("[Pancake] Processed 1 aggregated ad insight record for shop " + shopId
+                    + " from " + agg.campaignIds.size() + " campaigns.");
         }
+    }
+
+    private void saveShopAdsInsight(String shopId, AdsAggregation agg) throws Exception {
+        boolean hasExistingRecords = adInsightsHourlyRepository.existsByPlatformAndShopId("facebook-ads", shopId);
+        Instant hour = (hasExistingRecords ? Instant.now() : agg.earliestCreatedTime).truncatedTo(ChronoUnit.HOURS);
+
+        BigDecimal spend = agg.totalSpend;
+        int impressions = agg.totalImpressions;
+        int clicks = agg.totalClicks;
+        int reach = agg.totalReach;
+
+        if (hasExistingRecords) {
+            BigDecimal sumSpend = adInsightsHourlyRepository.sumSpendBeforeHour("facebook-ads", shopId, hour);
+            if (sumSpend == null) sumSpend = BigDecimal.ZERO;
+
+            Long sumImpressions = adInsightsHourlyRepository.sumImpressionsBeforeHour("facebook-ads", shopId, hour);
+            if (sumImpressions == null) sumImpressions = 0L;
+
+            Long sumClicks = adInsightsHourlyRepository.sumClicksBeforeHour("facebook-ads", shopId, hour);
+            if (sumClicks == null) sumClicks = 0L;
+
+            Long sumReach = adInsightsHourlyRepository.sumReachBeforeHour("facebook-ads", shopId, hour);
+            if (sumReach == null) sumReach = 0L;
+
+            spend = spend.subtract(sumSpend);
+            if (spend.compareTo(BigDecimal.ZERO) < 0) spend = BigDecimal.ZERO;
+
+            impressions -= sumImpressions.intValue();
+            if (impressions < 0) impressions = 0;
+
+            clicks -= sumClicks.intValue();
+            if (clicks < 0) clicks = 0;
+
+            reach -= sumReach.intValue();
+            if (reach < 0) reach = 0;
+        }
+
+        AdInsightsHourly values = buildShopAdsInsight(shopId, hour, agg, spend, impressions, clicks, reach);
+        synchronized (ADS_INSIGHTS_SAVE_LOCK) {
+            AdInsightsHourly insight = adInsightsHourlyRepository
+                    .findByPlatformAndShopIdAndHour("facebook-ads", shopId, hour)
+                    .orElseGet(AdInsightsHourly::new);
+            copyAdInsightValues(values, insight);
+            try {
+                adInsightsHourlyRepository.saveAndFlush(insight);
+            } catch (DataIntegrityViolationException duplicate) {
+                AdInsightsHourly existing = adInsightsHourlyRepository
+                        .findByPlatformAndShopIdAndHour("facebook-ads", shopId, hour)
+                        .orElseThrow(() -> duplicate);
+                copyAdInsightValues(values, existing);
+                adInsightsHourlyRepository.saveAndFlush(existing);
+            }
+        }
+    }
+
+    private AdInsightsHourly buildShopAdsInsight(
+            String shopId,
+            Instant hour,
+            AdsAggregation agg,
+            BigDecimal spend,
+            int impressions,
+            int clicks,
+            int reach
+    ) throws Exception {
+        AdInsightsHourly insight = new AdInsightsHourly();
+        insight.setPlatform("facebook-ads");
+        insight.setShopId(shopId);
+        insight.setAdAccountId("all");
+        insight.setCampaignId("all");
+        insight.setCampaignName("All Campaigns");
+        insight.setHour(hour);
+        insight.setSpend(spend);
+        insight.setImpressions(impressions);
+        insight.setClicks(clicks);
+        insight.setReach(reach);
+        insight.setCpc(clicks > 0 ? spend.divide(BigDecimal.valueOf(clicks), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO);
+        insight.setCpm(impressions > 0 ? spend.multiply(BigDecimal.valueOf(1000)).divide(BigDecimal.valueOf(impressions), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO);
+        insight.setCtr(impressions > 0 ? BigDecimal.valueOf(clicks).multiply(BigDecimal.valueOf(100)).divide(BigDecimal.valueOf(impressions), 2, RoundingMode.HALF_UP) : BigDecimal.ZERO);
+
+        Map<String, Object> rawMap = new LinkedHashMap<>();
+        rawMap.put("source", "pancake_ads_v2");
+        rawMap.put("campaign_ids", new ArrayList<>(agg.campaignIds));
+        rawMap.put("campaign_names", new ArrayList<>(agg.campaignNames));
+        rawMap.put("ad_account_ids", new ArrayList<>(agg.adAccountIds));
+        rawMap.put("ad_ids", new ArrayList<>(agg.adIds));
+        rawMap.put("raw_item_count", agg.rawItemCount);
+        insight.setRawData(objectMapper.writeValueAsString(rawMap));
+        insight.setCreatedAt(Instant.now());
+        return insight;
+    }
+
+    private void copyAdInsightValues(AdInsightsHourly source, AdInsightsHourly target) {
+        target.setPlatform(source.getPlatform());
+        target.setShopId(source.getShopId());
+        target.setAdAccountId(source.getAdAccountId());
+        target.setCampaignId(source.getCampaignId());
+        target.setCampaignName(source.getCampaignName());
+        target.setHour(source.getHour());
+        target.setSpend(source.getSpend());
+        target.setImpressions(source.getImpressions());
+        target.setClicks(source.getClicks());
+        target.setReach(source.getReach());
+        target.setCpc(source.getCpc());
+        target.setCpm(source.getCpm());
+        target.setCtr(source.getCtr());
+        target.setRawData(source.getRawData());
+        target.setCreatedAt(source.getCreatedAt());
     }
 
     private BigDecimal safeBigDecimal(com.fasterxml.jackson.databind.JsonNode node, String field) {
@@ -553,16 +559,16 @@ public class PancakeConnector implements PlatformConnector {
         return 0;
     }
 
-    private static class CampaignAggregation {
-        String campaignId;
-        String adAccountId;
-        String campaignName;
+    private static class AdsAggregation {
         Instant earliestCreatedTime = Instant.now();
         BigDecimal totalSpend = BigDecimal.ZERO;
         int totalImpressions = 0;
         int totalClicks = 0;
         int totalReach = 0;
-        com.fasterxml.jackson.databind.JsonNode rawNode;
+        int rawItemCount = 0;
+        Set<String> campaignIds = new HashSet<>();
+        Set<String> campaignNames = new HashSet<>();
+        Set<String> adAccountIds = new HashSet<>();
         Set<String> adIds = new HashSet<>();
     }
 

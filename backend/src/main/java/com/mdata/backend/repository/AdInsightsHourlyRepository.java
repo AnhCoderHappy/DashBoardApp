@@ -19,6 +19,8 @@ public interface AdInsightsHourlyRepository extends JpaRepository<AdInsightsHour
 
     Optional<AdInsightsHourly> findByPlatformAndShopIdAndHour(String platform, String shopId, Instant hour);
 
+    boolean existsByPlatformAndShopId(String platform, String shopId);
+
     List<AdInsightsHourly> findByHourGreaterThanEqual(Instant since);
 
     List<AdInsightsHourly> findByHourBetween(Instant start, Instant end);
@@ -34,12 +36,26 @@ public interface AdInsightsHourlyRepository extends JpaRepository<AdInsightsHour
             @Param("hour") Instant hour
     );
 
+    @Query("SELECT SUM(a.spend) FROM AdInsightsHourly a WHERE a.platform = :platform AND a.shopId = :shopId AND a.hour < :hour")
+    BigDecimal sumSpendBeforeHour(
+            @Param("platform") String platform,
+            @Param("shopId") String shopId,
+            @Param("hour") Instant hour
+    );
+
     @Query("SELECT SUM(a.clicks) FROM AdInsightsHourly a WHERE a.platform = :platform AND a.shopId = :shopId AND a.adAccountId = :adAccountId AND a.campaignId = :campaignId AND a.hour < :hour")
     Long sumClicksBeforeHour(
             @Param("platform") String platform,
             @Param("shopId") String shopId,
             @Param("adAccountId") String adAccountId,
             @Param("campaignId") String campaignId,
+            @Param("hour") Instant hour
+    );
+
+    @Query("SELECT SUM(a.clicks) FROM AdInsightsHourly a WHERE a.platform = :platform AND a.shopId = :shopId AND a.hour < :hour")
+    Long sumClicksBeforeHour(
+            @Param("platform") String platform,
+            @Param("shopId") String shopId,
             @Param("hour") Instant hour
     );
 
@@ -52,12 +68,26 @@ public interface AdInsightsHourlyRepository extends JpaRepository<AdInsightsHour
             @Param("hour") Instant hour
     );
 
+    @Query("SELECT SUM(a.impressions) FROM AdInsightsHourly a WHERE a.platform = :platform AND a.shopId = :shopId AND a.hour < :hour")
+    Long sumImpressionsBeforeHour(
+            @Param("platform") String platform,
+            @Param("shopId") String shopId,
+            @Param("hour") Instant hour
+    );
+
     @Query("SELECT SUM(a.reach) FROM AdInsightsHourly a WHERE a.platform = :platform AND a.shopId = :shopId AND a.adAccountId = :adAccountId AND a.campaignId = :campaignId AND a.hour < :hour")
     Long sumReachBeforeHour(
             @Param("platform") String platform,
             @Param("shopId") String shopId,
             @Param("adAccountId") String adAccountId,
             @Param("campaignId") String campaignId,
+            @Param("hour") Instant hour
+    );
+
+    @Query("SELECT SUM(a.reach) FROM AdInsightsHourly a WHERE a.platform = :platform AND a.shopId = :shopId AND a.hour < :hour")
+    Long sumReachBeforeHour(
+            @Param("platform") String platform,
+            @Param("shopId") String shopId,
             @Param("hour") Instant hour
     );
 
