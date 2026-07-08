@@ -74,14 +74,22 @@ public class DashboardController {
                 var connections = connectionRepository.findByPlatform("pancake");
                 for (var conn : connections) {
                     if ("active".equals(conn.getStatus())) {
-                        pancakeConnector.syncOrders(conn.getId(), null);
-                        pancakeConnector.syncAdsInsights(conn.getId(), null);
+                        try {
+                            pancakeConnector.syncOrders(conn.getId(), null);
+                            pancakeConnector.syncAdsInsights(conn.getId(), null);
+                        } catch (Exception connEx) {
+                            System.err.println("[Dashboard API] Error syncing for connection " + conn.getId() + ": " + connEx.getMessage());
+                        }
                     }
                 }
-                metricsService.rebuildHourlyMetrics(168);
-                metricsService.rebuildDailyMetrics(7);
-                metricsService.clearDashboardCache();
-                System.out.println("[Dashboard API] Real-time sync completed.");
+                try {
+                    metricsService.rebuildHourlyMetrics(168);
+                    metricsService.rebuildDailyMetrics(7);
+                    metricsService.clearDashboardCache();
+                    System.out.println("[Dashboard API] Real-time sync completed.");
+                } catch (Exception rebuildEx) {
+                    System.err.println("[Dashboard API] Error rebuilding metrics: " + rebuildEx.getMessage());
+                }
             } catch (Exception e) {
                 System.err.println("[Dashboard API] Real-time sync failed: " + e.getMessage());
             }
