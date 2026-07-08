@@ -79,6 +79,7 @@ public class PancakeConnector implements PlatformConnector {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(30))
                 .GET()
                 .build();
 
@@ -116,6 +117,7 @@ public class PancakeConnector implements PlatformConnector {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(30))
                 .GET()
                 .build();
 
@@ -146,6 +148,7 @@ public class PancakeConnector implements PlatformConnector {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(30))
                 .GET()
                 .build();
 
@@ -309,6 +312,7 @@ public class PancakeConnector implements PlatformConnector {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(30))
                 .GET()
                 .build();
 
