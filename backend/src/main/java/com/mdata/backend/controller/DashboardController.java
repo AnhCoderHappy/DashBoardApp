@@ -68,7 +68,7 @@ public class DashboardController {
     }
 
     @GetMapping("/api/dashboard/live")
-    public ResponseEntity<?> getLiveDashboard(
+    public ResponseEntity<DashboardDataDto> getLiveDashboard(
             @org.springframework.web.bind.annotation.RequestParam(required = false, defaultValue = "all") String shopId,
             @org.springframework.web.bind.annotation.RequestParam(required = false) String date,
             @org.springframework.web.bind.annotation.RequestParam(required = false, defaultValue = "false") boolean refresh) {
@@ -84,7 +84,7 @@ public class DashboardController {
         }
         long duration = System.currentTimeMillis() - start;
         System.out.println("[PERF-MEASURE] GET /api/dashboard/live response sent in " + duration + " ms. End time: " + System.currentTimeMillis() + " ms");
-        return ResponseEntity.ok(data);
+        return ResponseEntity.ok(data.data());
     }
 
     @org.springframework.web.bind.annotation.CrossOrigin

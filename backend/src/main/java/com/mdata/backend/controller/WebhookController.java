@@ -90,6 +90,7 @@ public class WebhookController {
 
                     sseService.broadcast("ORDER_CONFIRMED", Map.of("connectionId", conn.getId(), "orders", result.getConfirmedOrderIds()));
                     sseService.broadcast("DASHBOARD_DELTA", Map.of("connectionId", conn.getId(), "affectedDates", result.getAffectedDates()));
+                    sseService.broadcast("order-update", "new-order");
                 } catch (Exception ex) {
                     processingEvent.setStatus("failed");
                     processingEvent.setAttemptCount((processingEvent.getAttemptCount() == null ? 0 : processingEvent.getAttemptCount()) + 1);
